@@ -86,6 +86,13 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     private lateinit var binding: PlayerBinding
     private lateinit var gestures: TouchGestures
 
+    private enum class StudyDataStatus { LOADING, READY, MISSING, INVALID }
+    private var studyDataStatus = StudyDataStatus.LOADING
+    private var studyCues: List<StudyCue> = emptyList()
+    private var activeStudyIndex = -1
+    private var speedBeforeStudy: Double? = null
+    private var studyLoadGeneration = 0
+
     // convenience alias
     private val player get() = binding.player
 
@@ -195,6 +202,10 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
             nextBtn.setOnClickListener { playlistNext() }
             cycleAudioBtn.setOnClickListener { cycleAudio() }
             cycleSubsBtn.setOnClickListener { cycleSub() }
+            studyModeBtn.setOnClickListener { activateStudyModeForCurrentPosition() }
+            studyPreviousBtn.setOnClickListener { moveStudyCue(-1) }
+            studyNextBtn.setOnClickListener { moveStudyCue(1) }
+            studyCloseBtn.setOnClickListener { exitStudyMode() }
             playBtn.setOnClickListener { player.cyclePause() }
             cycleDecoderBtn.setOnClickListener { player.cycleHwdec() }
             cycleSpeedBtn.setOnClickListener { cycleSpeed() }
@@ -305,6 +316,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         player.addObserver(this)
         player.initialize(filesDir.path, cacheDir.path)
         player.playFile(filepath)
+        loadStudyData(filepath)
 
         mediaSession = initMediaSession()
         updateMediaSession()
@@ -344,6 +356,9 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
 
     override fun onDestroy() {
         Log.v(TAG, "Exiting.")
+
+        if (activeStudyIndex != -1)
+            player.clearStudyLoop()
 
         // Suppress any further callbacks
         activityIsForeground = false
@@ -387,6 +402,9 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
             return
         }
 
+        exitStudyMode()
+        loadStudyData(filepath)
+
         if (!activityIsForeground && didResumeBackgroundPlayback) {
             if (this.newIntentReplace) {
                 MPVLib.command(arrayOf("loadfile", filepath, "replace"))
@@ -399,6 +417,133 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         } else {
             MPVLib.command(arrayOf("loadfile", filepath))
         }
+    }
+
+    private fun loadStudyData(mediaPath: String) {
+        val generation = ++studyLoadGeneration
+        studyCues = emptyList()
+        activeStudyIndex = -1
+        studyDataStatus = StudyDataStatus.LOADING
+        binding.studyModeBtn.isEnabled = false
+
+        if (!mediaPath.startsWith('/')) {
+            studyDataStatus = StudyDataStatus.MISSING
+            binding.studyModeBtn.isEnabled = true
+            return
+        }
+
+        val mediaFile = File(mediaPath)
+        val baseName = mediaFile.name.substringBeforeLast('.', mediaFile.name)
+        val studyFile = File(mediaFile.parentFile, "$baseName.study.json")
+        if (!studyFile.isFile) {
+            studyDataStatus = StudyDataStatus.MISSING
+            binding.studyModeBtn.isEnabled = true
+            return
+        }
+
+        Thread {
+            try {
+                val parsed = StudyDataParser.parse(studyFile.readText())
+                require(parsed.zipWithNext().all { (first, second) -> first.start <= second.start })
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || generation != studyLoadGeneration)
+                        return@runOnUiThread
+                    studyCues = parsed
+                    studyDataStatus = StudyDataStatus.READY
+                    binding.studyModeBtn.isEnabled = true
+                    showToast(getString(R.string.study_data_ready))
+                }
+            } catch (error: Exception) {
+                Log.e(TAG, "Failed to load study data from $studyFile", error)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || generation != studyLoadGeneration)
+                        return@runOnUiThread
+                    studyDataStatus = StudyDataStatus.INVALID
+                    binding.studyModeBtn.isEnabled = true
+                }
+            }
+        }.start()
+    }
+
+    private fun activateStudyModeForCurrentPosition() {
+        if (studyDataStatus != StudyDataStatus.READY) {
+            val message = if (studyDataStatus == StudyDataStatus.INVALID)
+                R.string.study_data_invalid
+            else
+                R.string.study_data_missing
+            showToast(getString(message))
+            return
+        }
+
+        val position = player.timePos ?: psc.positionSec.toDouble()
+        var index = studyCues.indexOfFirst { position >= it.start && position <= it.end }
+        if (index == -1) {
+            index = studyCues.indexOfLast { position > it.end && position - it.end <= 1.5 }
+        }
+        if (index == -1) {
+            showToast(getString(R.string.study_no_current_line))
+            return
+        }
+        activateStudyCue(index)
+    }
+
+    private fun activateStudyCue(index: Int) {
+        if (index !in studyCues.indices)
+            return
+        if (activeStudyIndex == -1)
+            speedBeforeStudy = player.playbackSpeed ?: 1.0
+
+        activeStudyIndex = index
+        val cue = studyCues[index]
+        binding.studyTitle.text = getString(R.string.study_title_format, cue.id, cue.difficulty)
+        binding.studyJapanese.text = cue.japanese.ifBlank { cue.originalChinese }
+        binding.studyChinese.text = cue.naturalChinese
+        binding.studyDetails.text = formatStudyDetails(cue)
+        binding.studyPreviousBtn.isEnabled = index > 0
+        binding.studyNextBtn.isEnabled = index < studyCues.lastIndex
+        binding.studyPanel.visibility = View.VISIBLE
+        player.setStudyLoop(cue.start, cue.end)
+    }
+
+    private fun moveStudyCue(offset: Int) {
+        if (activeStudyIndex == -1)
+            return
+        activateStudyCue((activeStudyIndex + offset).coerceIn(studyCues.indices))
+    }
+
+    private fun exitStudyMode() {
+        if (activeStudyIndex == -1)
+            return
+        player.clearStudyLoop()
+        speedBeforeStudy?.let { player.playbackSpeed = it }
+        speedBeforeStudy = null
+        activeStudyIndex = -1
+        binding.studyPanel.visibility = View.GONE
+    }
+
+    private fun formatStudyDetails(cue: StudyCue): String {
+        val sections = mutableListOf<String>()
+        if (cue.vocabulary.isNotEmpty()) {
+            val lines = cue.vocabulary.joinToString("\n") {
+                val reading = if (it.reading.isBlank() || it.reading == it.surface) "" else "【${it.reading}】"
+                "• ${it.surface}$reading ${it.meaning}\n  ${it.note}"
+            }
+            sections.add("${getString(R.string.study_vocabulary)}\n$lines")
+        }
+        if (cue.grammar.isNotEmpty()) {
+            val lines = cue.grammar.joinToString("\n") {
+                "• ${it.pattern}：${it.meaning}\n  ${it.explanation}"
+            }
+            sections.add("${getString(R.string.study_grammar)}\n$lines")
+        }
+        if (cue.listeningNotes.isNotEmpty()) {
+            val lines = cue.listeningNotes.joinToString("\n") { "• $it" }
+            sections.add("${getString(R.string.study_listening)}\n$lines")
+        }
+        if (cue.translationNote.isNotBlank()) {
+            sections.add("${getString(R.string.study_translation_note)}\n${cue.translationNote}")
+        }
+        return sections.joinToString("\n\n")
     }
 
     private fun updateAudioPresence() {

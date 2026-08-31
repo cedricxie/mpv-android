@@ -8,6 +8,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
+        applicationId "com.yuesongxie.mpvstudy"
         minSdkVersion 23
         targetSdk 36
 

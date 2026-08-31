@@ -180,4 +180,19 @@
     <string name="pref_remember_brightness_summary">启动播放器时恢复上次设定的屏幕亮度。</string>
     <string name="pref_new_intent_replace_title">立即播放新文件</string>
     <string name="pref_remember_brightness_title">记住屏幕亮度</string>
+
+    <!-- 学习模式 -->
+    <string name="study_mode_activate">学习这句</string>
+    <string name="study_previous">上一句</string>
+    <string name="study_next">下一句</string>
+    <string name="study_close">退出</string>
+    <string name="study_data_ready">学习字幕已加载</string>
+    <string name="study_data_missing">没有找到同名 .study.json</string>
+    <string name="study_data_invalid">学习字幕读取失败</string>
+    <string name="study_no_current_line">当前时间没有对白</string>
+    <string name="study_vocabulary">生词</string>
+    <string name="study_grammar">语法</string>
+    <string name="study_listening">听力提示</string>
+    <string name="study_translation_note">翻译说明</string>
+    <string name="study_title_format">%1$s · %2$s · 0.5×</string>
 </resources>

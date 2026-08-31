@@ -23,7 +23,7 @@
         android:icon="@mipmap/mpv_launcher_icon"
         android:roundIcon="@mipmap/mpv_launcher_icon"
         android:banner="@mipmap/ic_banner"
-        android:label="@string/mpv_activity"
+        android:label="@string/study_app_name"
         android:appCategory="video"
         android:localeConfig="@xml/locales_config">
 
