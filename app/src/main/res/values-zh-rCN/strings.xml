@@ -211,4 +211,5 @@
     <string name="webdav_certificate_message">请在群晖中核对以下 SHA-256 证书指纹，然后选择信任：\n\n%1$s</string>
     <string name="webdav_trust">信任</string>
     <string name="webdav_up">上一级</string>
+    <string name="webdav_checking_certificate">正在检查 NAS 证书…</string>
 </resources>

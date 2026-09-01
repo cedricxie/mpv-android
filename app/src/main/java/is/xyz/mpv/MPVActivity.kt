@@ -645,7 +645,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         val position = player.timePos ?: psc.positionSec.toDouble()
         var index = studyCues.indexOfFirst { position >= it.start && position <= it.end }
         if (index == -1) {
-            index = studyCues.indexOfLast { position > it.end && position - it.end <= 1.5 }
+            index = studyCues.indexOfLast { position > it.end }
         }
         if (index == -1) {
             showToast(getString(R.string.study_no_current_line))

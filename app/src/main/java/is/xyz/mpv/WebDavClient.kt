@@ -10,8 +10,10 @@ import org.w3c.dom.Element
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
+import java.net.URI
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSocket
 import javax.net.ssl.X509TrustManager
 import javax.xml.parsers.DocumentBuilderFactory
 
@@ -49,9 +51,15 @@ class WebDavClient(private val config: WebDavConfig) {
             val body = response.body?.byteStream() ?: return emptyList()
             val factory = DocumentBuilderFactory.newInstance().apply {
                 isNamespaceAware = true
-                setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-                setFeature("http://xml.org/sax/features/external-general-entities", false)
-                setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+                runCatching {
+                    setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+                }
+                runCatching {
+                    setFeature("http://xml.org/sax/features/external-general-entities", false)
+                }
+                runCatching {
+                    setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+                }
             }
             val document = factory.newDocumentBuilder().parse(body)
             val responses = document.getElementsByTagNameNS("DAV:", "response")
@@ -91,6 +99,23 @@ class WebDavClient(private val config: WebDavConfig) {
         }
     }
 
+    fun probeCertificateFingerprint(): String {
+        val trustManager = trustAllManager()
+        val sslContext = SSLContext.getInstance("TLS").apply {
+            init(null, arrayOf(trustManager), SecureRandom())
+        }
+        val uri = URI(config.serverUrl)
+        val port = if (uri.port > 0) uri.port else 443
+        val socket = sslContext.socketFactory.createSocket(uri.host, port) as SSLSocket
+        socket.soTimeout = 10_000
+        socket.use {
+            it.startHandshake()
+            val certificate = it.session.peerCertificates.firstOrNull() as? X509Certificate
+                ?: throw IllegalStateException("NAS 没有提供 TLS 证书")
+            return fingerprint(certificate)
+        }
+    }
+
     fun urlForPath(path: String): String {
         val encodedPath = Uri.encode(if (path.startsWith('/')) path else "/$path", "/")
         return config.serverUrl.trimEnd('/') + encodedPath
@@ -99,23 +124,6 @@ class WebDavClient(private val config: WebDavConfig) {
     private fun requestBuilder(path: String): Request.Builder = Request.Builder()
         .url(urlForPath(path))
         .header("Authorization", authorizationHeader)
-
-    private fun probeCertificateFingerprint(): String {
-        val trustManager = trustAllManager()
-        val sslContext = SSLContext.getInstance("TLS").apply {
-            init(null, arrayOf(trustManager), SecureRandom())
-        }
-        val probeClient = baseClient()
-            .sslSocketFactory(sslContext.socketFactory, trustManager)
-            .hostnameVerifier { _, _ -> true }
-            .build()
-        val request = Request.Builder().url(config.serverUrl).build()
-        probeClient.newCall(request).execute().use { response ->
-            val certificate = response.handshake?.peerCertificates?.firstOrNull() as? X509Certificate
-                ?: throw IllegalStateException("NAS 没有提供 TLS 证书")
-            return fingerprint(certificate)
-        }
-    }
 
     private fun pinnedClient(expectedFingerprint: String): OkHttpClient {
         val trustManager = object : X509TrustManager {

@@ -5,6 +5,7 @@ import `is`.xyz.mpv.databinding.ItemWebdavBinding
 import android.content.Intent
 import android.os.Bundle
 import android.text.InputType
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -58,7 +59,31 @@ class WebDavBrowserActivity : AppCompatActivity() {
         config = newConfig
         client = WebDavClient(newConfig)
         currentPath = WebDavConfigStore.normalizeRoot(newConfig.rootPath)
+        if (newConfig.serverUrl.startsWith("https://", ignoreCase = true) &&
+            newConfig.certificateFingerprint == null
+        ) {
+            probeCertificate(newConfig)
+            return
+        }
         loadDirectory(currentPath)
+    }
+
+    private fun probeCertificate(activeConfig: WebDavConfig) {
+        binding.webdavProgress.isVisible = true
+        binding.webdavMessage.isVisible = true
+        binding.webdavMessage.setTextColor(0xffeeeeee.toInt())
+        binding.webdavMessage.text = getString(R.string.webdav_checking_certificate)
+        executor.execute {
+            try {
+                val fingerprint = WebDavClient(activeConfig).probeCertificateFingerprint()
+                runOnUiThread {
+                    if (!isFinishing) showCertificateDialog(fingerprint)
+                }
+            } catch (error: Exception) {
+                Log.e(TAG, "Certificate probe failed", error)
+                runOnUiThread { showConnectionError(error) }
+            }
+        }
     }
 
     private fun loadDirectory(path: String) {
@@ -90,17 +115,23 @@ class WebDavBrowserActivity : AppCompatActivity() {
             } catch (trust: CertificateTrustRequired) {
                 runOnUiThread { showCertificateDialog(trust.fingerprint) }
             } catch (error: Exception) {
+                Log.e(TAG, "WebDAV directory load failed for $path", error)
                 runOnUiThread {
                     if (generation != loadGeneration || isFinishing) return@runOnUiThread
-                    binding.webdavProgress.isVisible = false
-                    binding.webdavMessage.isVisible = true
-                    binding.webdavMessage.text = getString(
-                        R.string.webdav_connection_failed,
-                        error.message ?: error.javaClass.simpleName,
-                    )
+                    showConnectionError(error)
                 }
             }
         }
+    }
+
+    private fun showConnectionError(error: Exception) {
+        binding.webdavProgress.isVisible = false
+        binding.webdavMessage.isVisible = true
+        binding.webdavMessage.setTextColor(0xffff8a80.toInt())
+        binding.webdavMessage.text = getString(
+            R.string.webdav_connection_failed,
+            error.message ?: error.javaClass.simpleName,
+        )
     }
 
     private fun openEntry(entry: WebDavEntry) {
@@ -134,6 +165,7 @@ class WebDavBrowserActivity : AppCompatActivity() {
 
     private fun showCertificateDialog(fingerprint: String) {
         binding.webdavProgress.isVisible = false
+        binding.webdavMessage.isVisible = false
         AlertDialog.Builder(this)
             .setTitle(R.string.webdav_certificate_title)
             .setMessage(getString(R.string.webdav_certificate_message, fingerprint))
@@ -233,5 +265,9 @@ class WebDavBrowserActivity : AppCompatActivity() {
                 binding.root.setOnClickListener { onClick(entry) }
             }
         }
+    }
+
+    companion object {
+        private const val TAG = "MpvStudyWebDav"
     }
 }
