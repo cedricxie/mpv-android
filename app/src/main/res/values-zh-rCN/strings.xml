@@ -198,4 +198,17 @@
     <string name="study_drag_handle">↕ 拖动调整位置</string>
     <string name="study_collapse">收起</string>
     <string name="study_expand">展开</string>
+    <string name="webdav_title">NAS 媒体库</string>
+    <string name="webdav_configure">配置 NAS</string>
+    <string name="webdav_server">服务器地址</string>
+    <string name="webdav_root">媒体根目录</string>
+    <string name="webdav_username">用户名</string>
+    <string name="webdav_password">密码</string>
+    <string name="webdav_save">保存并连接</string>
+    <string name="webdav_empty">这个目录中没有可播放文件</string>
+    <string name="webdav_connection_failed">无法连接 NAS：%1$s</string>
+    <string name="webdav_certificate_title">信任这台 NAS？</string>
+    <string name="webdav_certificate_message">请在群晖中核对以下 SHA-256 证书指纹，然后选择信任：\n\n%1$s</string>
+    <string name="webdav_trust">信任</string>
+    <string name="webdav_up">上一级</string>
 </resources>

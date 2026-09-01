@@ -231,4 +231,17 @@
     <string name="study_drag_handle">↕ Drag to reposition</string>
     <string name="study_collapse">Collapse</string>
     <string name="study_expand">Expand</string>
+    <string name="webdav_title">NAS Library</string>
+    <string name="webdav_configure">Configure NAS</string>
+    <string name="webdav_server">Server URL</string>
+    <string name="webdav_root">Media root</string>
+    <string name="webdav_username">Username</string>
+    <string name="webdav_password">Password</string>
+    <string name="webdav_save">Save and connect</string>
+    <string name="webdav_empty">This folder contains no playable files</string>
+    <string name="webdav_connection_failed">Could not connect to NAS: %1$s</string>
+    <string name="webdav_certificate_title">Trust this NAS?</string>
+    <string name="webdav_certificate_message">Verify this SHA-256 certificate fingerprint on your Synology NAS, then trust it:\n\n%1$s</string>
+    <string name="webdav_trust">Trust</string>
+    <string name="webdav_up">Up</string>
 </resources>

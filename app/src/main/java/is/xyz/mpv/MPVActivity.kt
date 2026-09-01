@@ -321,7 +321,15 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         }
 
         player.addObserver(this)
-        player.initialize(filesDir.path, cacheDir.path)
+        val webDavOptions = buildMap {
+            intent.getStringExtra(EXTRA_WEBDAV_AUTHORIZATION)?.let {
+                put("http-header-fields", "Authorization: $it")
+            }
+            if (intent.getBooleanExtra(EXTRA_WEBDAV_INSECURE_TLS, false)) {
+                put("tls-verify", "no")
+            }
+        }
+        player.initialize(filesDir.path, cacheDir.path, webDavOptions)
         player.playFile(filepath)
         loadStudyData(filepath, intent)
 
@@ -432,6 +440,13 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         activeStudyIndex = -1
         studyDataStatus = StudyDataStatus.LOADING
         binding.studyModeBtn.isEnabled = false
+
+        val webDavStudyUrl = sourceIntent?.getStringExtra(EXTRA_WEBDAV_STUDY_URL)
+        val webDavSubtitleUrl = sourceIntent?.getStringExtra(EXTRA_WEBDAV_SUBTITLE_URL)
+        if (webDavStudyUrl != null || webDavSubtitleUrl != null) {
+            loadStudyDataFromWebDav(generation, webDavSubtitleUrl, webDavStudyUrl)
+            return
+        }
 
         if (sharedSubtitleUri != null || sharedStudyUri != null) {
             loadStudyDataFromSharedDocuments(
@@ -566,6 +581,47 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                 }
             } catch (error: Exception) {
                 Log.e(TAG, "Failed to load shared study documents", error)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || generation != studyLoadGeneration)
+                        return@runOnUiThread
+                    studyDataStatus = StudyDataStatus.INVALID
+                    binding.studyModeBtn.isEnabled = true
+                }
+            }
+        }.start()
+    }
+
+    private fun loadStudyDataFromWebDav(
+        generation: Int,
+        subtitleUrl: String?,
+        studyUrl: String?,
+    ) {
+        Thread {
+            try {
+                val config = WebDavConfigStore(this).load()
+                    ?: throw IllegalStateException("NAS configuration is missing")
+                val client = WebDavClient(config)
+                val parsed = studyUrl?.let { StudyDataParser.parse(client.readText(it)) }
+                parsed?.let {
+                    require(it.zipWithNext().all { (first, second) -> first.start <= second.start })
+                }
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || generation != studyLoadGeneration)
+                        return@runOnUiThread
+                    subtitleUrl?.let {
+                        MPVLib.command(arrayOf("sub-add", it, "select"))
+                    }
+                    if (parsed == null) {
+                        studyDataStatus = StudyDataStatus.MISSING
+                    } else {
+                        studyCues = parsed
+                        studyDataStatus = StudyDataStatus.READY
+                        showToast(getString(R.string.study_data_ready))
+                    }
+                    binding.studyModeBtn.isEnabled = true
+                }
+            } catch (error: Exception) {
+                Log.e(TAG, "Failed to load WebDAV study companions", error)
                 runOnUiThread {
                     if (isFinishing || isDestroyed || generation != studyLoadGeneration)
                         return@runOnUiThread

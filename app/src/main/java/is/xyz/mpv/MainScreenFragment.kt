@@ -75,13 +75,16 @@ class MainScreenFragment : Fragment(R.layout.fragment_main_screen) {
         Utils.handleInsetsAsPadding(binding.root)
 
         binding.docBtn.setOnClickListener {
+            saveChoice("")
+            startActivity(Intent(requireContext(), WebDavBrowserActivity::class.java))
+        }
+        binding.docBtn.setOnLongClickListener {
             try {
                 documentTreeOpener.launch(null)
-            } catch (e: ActivityNotFoundException) {
-                // Android TV doesn't come with a document picker and certain versions just throw
-                // instead of handling this gracefully
+            } catch (_: ActivityNotFoundException) {
                 binding.docBtn.isEnabled = false
             }
+            true
         }
         binding.urlBtn.setOnClickListener {
             saveChoice("url")

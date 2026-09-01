@@ -25,9 +25,20 @@ mpv loads the external ASS subtitle for normal bilingual playback. The app disco
 - Previous/next changes the loop to the adjacent cue.
 - Close clears the A/B loop and restores the speed used before entering study mode.
 
-## NAS folders through Android document providers
+## Built-in WebDAV NAS browser
 
-Tap **Open NAS folder** and choose an SMB folder from a document-provider app such as CX File
+The **Open NAS folder** button opens the built-in WebDAV browser. On first use, configure the
+Synology WebDAV server, media root, username, and password. The password is encrypted with an
+Android Keystore key.
+
+The first HTTPS connection asks the user to trust the NAS certificate fingerprint; later
+connections are pinned to that fingerprint. mpv receives the WebDAV authorization header and
+streams the video directly with HTTP Range. Matching subtitle and `*.study.json` companions are
+loaded from the same WebDAV directory.
+
+## NAS folders through Android document providers (fallback)
+
+Long-press **Open NAS folder** and choose an SMB folder from a document-provider app such as CX File
 Explorer. The selected tree permission is persisted by Android. When a video is chosen through the
 in-app browser, the app queries that video's parent document and loads the same-name subtitle and
 study-data documents through `content://` URIs.
