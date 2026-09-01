@@ -14,11 +14,7 @@ abstract class BaseMPVView(context: Context, attrs: AttributeSet) : SurfaceView(
      *
      * Call this once before the view is shown.
      */
-    fun initialize(
-        configDir: String,
-        cacheDir: String,
-        preInitOptions: Map<String, String> = emptyMap(),
-    ) {
+    fun initialize(configDir: String, cacheDir: String) {
         MPVLib.create(context.applicationContext)
 
         /* set normal options (user-supplied config can override) */
@@ -27,8 +23,6 @@ abstract class BaseMPVView(context: Context, attrs: AttributeSet) : SurfaceView(
         for (opt in arrayOf("gpu-shader-cache-dir", "icc-cache-dir"))
             MPVLib.setOptionString(opt, cacheDir)
         initOptions()
-        preInitOptions.forEach { (name, value) -> MPVLib.setOptionString(name, value) }
-
         MPVLib.init()
 
         /* set hardcoded options */

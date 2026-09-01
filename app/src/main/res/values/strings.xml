@@ -245,4 +245,5 @@
     <string name="webdav_trust">Trust</string>
     <string name="webdav_up">Up</string>
     <string name="webdav_checking_certificate">Checking NAS certificate…</string>
+    <string name="webdav_https_required">Use an HTTPS WebDAV address</string>
 </resources>

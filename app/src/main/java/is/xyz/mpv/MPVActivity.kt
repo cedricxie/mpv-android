@@ -309,6 +309,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
 
         // Parse the intent
         val filepath = parsePathFromIntent(intent)
+        onloadCommands.clear()
         if (intent.action == Intent.ACTION_VIEW) {
             parseIntentExtras(intent.extras)
         }
@@ -321,15 +322,8 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         }
 
         player.addObserver(this)
-        val webDavOptions = buildMap {
-            intent.getStringExtra(EXTRA_WEBDAV_AUTHORIZATION)?.let {
-                put("http-header-fields", "Authorization: $it")
-            }
-            if (intent.getBooleanExtra(EXTRA_WEBDAV_INSECURE_TLS, false)) {
-                put("tls-verify", "no")
-            }
-        }
-        player.initialize(filesDir.path, cacheDir.path, webDavOptions)
+        queueWebDavPlaybackOptions(filepath)
+        player.initialize(filesDir.path, cacheDir.path)
         player.playFile(filepath)
         loadStudyData(filepath, intent)
 
@@ -418,6 +412,10 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         }
 
         exitStudyMode()
+        onloadCommands.clear()
+        if (intent.action == Intent.ACTION_VIEW)
+            parseIntentExtras(intent.extras)
+        queueWebDavPlaybackOptions(filepath)
         loadStudyData(filepath, intent)
 
         if (!activityIsForeground && didResumeBackgroundPlayback) {
@@ -483,7 +481,6 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         Thread {
             try {
                 val parsed = StudyDataParser.parse(studyFile.readText())
-                require(parsed.zipWithNext().all { (first, second) -> first.start <= second.start })
                 runOnUiThread {
                     if (isFinishing || isDestroyed || generation != studyLoadGeneration)
                         return@runOnUiThread
@@ -504,6 +501,30 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         }.start()
     }
 
+    private fun queueWebDavPlaybackOptions(mediaPath: String) {
+        val store = WebDavConfigStore(this)
+        val config = store.load() ?: return
+        val client = runCatching { WebDavClient(config) }.getOrNull() ?: return
+        if (!client.isAllowedUrl(mediaPath)) return
+        val certificatePath = store.trustedCertificatePath() ?: return
+
+        onloadCommands.add(arrayOf(
+            "set",
+            "file-local-options/http-header-fields",
+            "Authorization: ${client.authorizationHeader}",
+        ))
+        onloadCommands.add(arrayOf(
+            "set",
+            "file-local-options/tls-verify",
+            "yes",
+        ))
+        onloadCommands.add(arrayOf(
+            "set",
+            "file-local-options/tls-ca-file",
+            certificatePath,
+        ))
+    }
+
     private fun loadStudyDataFromDocumentTree(
         generation: Int,
         treeUri: Uri,
@@ -520,9 +541,6 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                 )
                 val parsed = companions.studyData?.let {
                     StudyDataParser.parse(StudyDocumentResolver.readText(contentResolver, it))
-                }
-                parsed?.let {
-                    require(it.zipWithNext().all { (first, second) -> first.start <= second.start })
                 }
                 runOnUiThread {
                     if (isFinishing || isDestroyed || generation != studyLoadGeneration)
@@ -561,9 +579,6 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                 val parsed = studyUri?.let {
                     StudyDataParser.parse(StudyDocumentResolver.readText(contentResolver, it))
                 }
-                parsed?.let {
-                    require(it.zipWithNext().all { (first, second) -> first.start <= second.start })
-                }
                 runOnUiThread {
                     if (isFinishing || isDestroyed || generation != studyLoadGeneration)
                         return@runOnUiThread
@@ -601,10 +616,13 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                 val config = WebDavConfigStore(this).load()
                     ?: throw IllegalStateException("NAS configuration is missing")
                 val client = WebDavClient(config)
-                val parsed = studyUrl?.let { StudyDataParser.parse(client.readText(it)) }
-                parsed?.let {
-                    require(it.zipWithNext().all { (first, second) -> first.start <= second.start })
+                require(subtitleUrl == null || client.isAllowedUrl(subtitleUrl)) {
+                    "WebDAV subtitle URL is outside the configured NAS directory"
                 }
+                require(studyUrl == null || client.isAllowedUrl(studyUrl)) {
+                    "WebDAV study URL is outside the configured NAS directory"
+                }
+                val parsed = studyUrl?.let { StudyDataParser.parse(client.readText(it)) }
                 runOnUiThread {
                     if (isFinishing || isDestroyed || generation != studyLoadGeneration)
                         return@runOnUiThread

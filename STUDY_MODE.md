@@ -18,7 +18,7 @@ mpv loads the external ASS subtitle for normal bilingual playback. The app disco
 ## MVP behavior
 
 - Tap **Study** / **学习这句** while a subtitle is active.
-- The app finds the matching cue by `start`/`end` (with a 1.5-second grace period after the line).
+- The app finds the matching cue by `start`/`end`; between lines it returns to the nearest previous cue.
 - Playback seeks to the cue start, switches to 0.5×, and loops between the cue boundaries.
 - The study panel shows Japanese, corrected Chinese, vocabulary, grammar, listening notes, and the
   translation note.
@@ -32,9 +32,10 @@ Synology WebDAV server, media root, username, and password. The password is encr
 Android Keystore key.
 
 The first HTTPS connection asks the user to trust the NAS certificate fingerprint; later
-connections are pinned to that fingerprint. mpv receives the WebDAV authorization header and
-streams the video directly with HTTP Range. Matching subtitle and `*.study.json` companions are
-loaded from the same WebDAV directory.
+connections are pinned to that fingerprint. The trusted certificate is also used as mpv's CA for
+that NAS file, so TLS verification remains enabled during streaming. WebDAV authorization is set as
+a file-local option and is never reused for unrelated URLs. Matching subtitle and `*.study.json`
+companions must be on the configured NAS origin and under the configured media root.
 
 ## NAS folders through Android document providers (fallback)
 

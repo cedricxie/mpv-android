@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import java.io.File
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -19,7 +20,8 @@ data class WebDavConfig(
 )
 
 class WebDavConfigStore(context: Context) {
-    private val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+    private val applicationContext = context.applicationContext
+    private val preferences = applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
     fun load(): WebDavConfig? {
         val server = preferences.getString(KEY_SERVER, null) ?: return null
@@ -46,7 +48,19 @@ class WebDavConfigStore(context: Context) {
                 else putString(KEY_FINGERPRINT, config.certificateFingerprint)
             }
             .apply()
+        if (config.certificateFingerprint == null)
+            trustedCertificateFile.delete()
     }
+
+    fun saveTrustedCertificate(pem: String) {
+        trustedCertificateFile.writeText(pem)
+    }
+
+    fun trustedCertificatePath(): String? =
+        trustedCertificateFile.takeIf { it.isFile && it.length() > 0 }?.absolutePath
+
+    private val trustedCertificateFile: File
+        get() = File(applicationContext.filesDir, TRUSTED_CERTIFICATE_FILE)
 
     private fun encrypt(value: String): String {
         val cipher = Cipher.getInstance(TRANSFORMATION)
@@ -93,6 +107,7 @@ class WebDavConfigStore(context: Context) {
         private const val KEY_PASSWORD = "password"
         private const val KEY_FINGERPRINT = "certificate_fingerprint"
         private const val KEY_ALIAS = "mpv_study_webdav_password"
+        private const val TRUSTED_CERTIFICATE_FILE = "webdav-nas-cert.pem"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
         private const val IV_SIZE = 12
 
@@ -104,5 +119,3 @@ class WebDavConfigStore(context: Context) {
 
 const val EXTRA_WEBDAV_STUDY_URL = "webdav_study_url"
 const val EXTRA_WEBDAV_SUBTITLE_URL = "webdav_subtitle_url"
-const val EXTRA_WEBDAV_AUTHORIZATION = "webdav_authorization"
-const val EXTRA_WEBDAV_INSECURE_TLS = "webdav_insecure_tls"

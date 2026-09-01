@@ -212,4 +212,5 @@
     <string name="webdav_trust">信任</string>
     <string name="webdav_up">上一级</string>
     <string name="webdav_checking_certificate">正在检查 NAS 证书…</string>
+    <string name="webdav_https_required">WebDAV 地址必须使用 HTTPS</string>
 </resources>

@@ -59,9 +59,7 @@ class WebDavBrowserActivity : AppCompatActivity() {
         config = newConfig
         client = WebDavClient(newConfig)
         currentPath = WebDavConfigStore.normalizeRoot(newConfig.rootPath)
-        if (newConfig.serverUrl.startsWith("https://", ignoreCase = true) &&
-            newConfig.certificateFingerprint == null
-        ) {
+        if (newConfig.certificateFingerprint == null || store.trustedCertificatePath() == null) {
             probeCertificate(newConfig)
             return
         }
@@ -75,9 +73,19 @@ class WebDavBrowserActivity : AppCompatActivity() {
         binding.webdavMessage.text = getString(R.string.webdav_checking_certificate)
         executor.execute {
             try {
-                val fingerprint = WebDavClient(activeConfig).probeCertificateFingerprint()
+                val certificate = WebDavClient(activeConfig).probeCertificate()
                 runOnUiThread {
-                    if (!isFinishing) showCertificateDialog(fingerprint)
+                    if (isFinishing) return@runOnUiThread
+                    if (activeConfig.certificateFingerprint.equals(
+                            certificate.fingerprint,
+                            ignoreCase = true,
+                        )
+                    ) {
+                        store.saveTrustedCertificate(certificate.pem)
+                        connect(activeConfig)
+                    } else {
+                        showCertificateDialog(certificate)
+                    }
                 }
             } catch (error: Exception) {
                 Log.e(TAG, "Certificate probe failed", error)
@@ -113,7 +121,7 @@ class WebDavBrowserActivity : AppCompatActivity() {
                     binding.webdavUpButton.isEnabled = path != config?.rootPath
                 }
             } catch (trust: CertificateTrustRequired) {
-                runOnUiThread { showCertificateDialog(trust.fingerprint) }
+                runOnUiThread { config?.let(::probeCertificate) }
             } catch (error: Exception) {
                 Log.e(TAG, "WebDAV directory load failed for $path", error)
                 runOnUiThread {
@@ -148,8 +156,6 @@ class WebDavBrowserActivity : AppCompatActivity() {
         val study = companion(".study.json")
         val intent = Intent(this, MPVActivity::class.java)
             .putExtra("filepath", activeClient.urlForPath(entry.path))
-            .putExtra(EXTRA_WEBDAV_AUTHORIZATION, activeClient.authorizationHeader)
-            .putExtra(EXTRA_WEBDAV_INSECURE_TLS, config?.serverUrl?.startsWith("https://") == true)
         subtitle?.let { intent.putExtra(EXTRA_WEBDAV_SUBTITLE_URL, activeClient.urlForPath(it.path)) }
         study?.let { intent.putExtra(EXTRA_WEBDAV_STUDY_URL, activeClient.urlForPath(it.path)) }
         startActivity(intent)
@@ -163,15 +169,18 @@ class WebDavBrowserActivity : AppCompatActivity() {
         return true
     }
 
-    private fun showCertificateDialog(fingerprint: String) {
+    private fun showCertificateDialog(certificate: WebDavServerCertificate) {
         binding.webdavProgress.isVisible = false
         binding.webdavMessage.isVisible = false
         AlertDialog.Builder(this)
             .setTitle(R.string.webdav_certificate_title)
-            .setMessage(getString(R.string.webdav_certificate_message, fingerprint))
+            .setMessage(getString(R.string.webdav_certificate_message, certificate.fingerprint))
             .setPositiveButton(R.string.webdav_trust) { _, _ ->
-                val trusted = config?.copy(certificateFingerprint = fingerprint) ?: return@setPositiveButton
+                val trusted = config?.copy(
+                    certificateFingerprint = certificate.fingerprint,
+                ) ?: return@setPositiveButton
                 store.save(trusted)
+                store.saveTrustedCertificate(certificate.pem)
                 connect(trusted)
             }
             .setNegativeButton(R.string.dialog_cancel) { _, _ -> finish() }
@@ -215,6 +224,10 @@ class WebDavBrowserActivity : AppCompatActivity() {
                     return@setOnClickListener
                 }
                 val normalizedServer = server.text.toString().trim().trimEnd('/')
+                if (!normalizedServer.startsWith("https://", ignoreCase = true)) {
+                    server.error = getString(R.string.webdav_https_required)
+                    return@setOnClickListener
+                }
                 val fingerprint = existing?.certificateFingerprint.takeIf {
                     existing?.serverUrl.equals(normalizedServer, ignoreCase = true)
                 }

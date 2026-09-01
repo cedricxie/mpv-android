@@ -35,7 +35,7 @@ data class StudyCue(
 object StudyDataParser {
     fun parse(json: String): List<StudyCue> {
         val items = JSONObject(json).getJSONArray("items")
-        return buildList(items.length()) {
+        return validate(buildList(items.length()) {
             for (index in 0 until items.length()) {
                 val item = items.getJSONObject(index)
                 val vocabularyJson = item.getJSONArray("vocabulary")
@@ -83,6 +83,25 @@ object StudyDataParser {
                     translationNote = item.getString("translation_note"),
                 ))
             }
+        })
+    }
+
+    internal fun validate(cues: List<StudyCue>): List<StudyCue> {
+        require(cues.isNotEmpty()) { "Study data contains no cues" }
+        require(cues.zipWithNext().all { (first, second) -> first.start <= second.start }) {
+            "Study cues are not ordered by start time"
         }
+        val ids = mutableSetOf<String>()
+        cues.forEach { cue ->
+            require(cue.id.isNotBlank()) { "Study cue ID is blank" }
+            require(ids.add(cue.id)) { "Duplicate study cue ID: ${cue.id}" }
+            require(cue.start.isFinite() && cue.start >= 0.0) {
+                "Invalid start time for ${cue.id}"
+            }
+            require(cue.end.isFinite() && cue.end > cue.start) {
+                "Invalid end time for ${cue.id}"
+            }
+        }
+        return cues
     }
 }
