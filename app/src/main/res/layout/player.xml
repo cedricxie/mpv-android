@@ -154,6 +154,15 @@
                     app:srcCompat="@drawable/ic_subtitles_black_24dp"
                     app:tint="@color/tint_normal" />
 
+                <Button
+                    android:id="@+id/studyModeBtn"
+                    style="?buttonBarButtonStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:enabled="false"
+                    android:text="@string/study_mode_activate"
+                    android:textColor="@android:color/white" />
+
                 <ImageButton
                     android:id="@+id/playBtn"
                     style="?buttonBarButtonStyle"
@@ -180,6 +189,115 @@
                     tools:text="1.00X" />
 
             </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/studyPanel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_above="@id/controls"
+            android:layout_marginStart="24dp"
+            android:layout_marginEnd="24dp"
+            android:layout_marginBottom="12dp"
+            android:background="#e6000000"
+            android:orientation="vertical"
+            android:padding="16dp"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <TextView
+                android:id="@+id/studyDragHandle"
+                android:layout_width="match_parent"
+                android:layout_height="32dp"
+                android:gravity="center"
+                android:text="@string/study_drag_handle"
+                android:textColor="#b3ffffff"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/studyPreviousBtn"
+                    style="?buttonBarButtonStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/study_previous"
+                    android:textColor="@android:color/white" />
+
+                <TextView
+                    android:id="@+id/studyTitle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:textColor="@android:color/white"
+                    android:textStyle="bold"
+                    tools:text="S01E02-0328 · N4 · 0.5×" />
+
+                <Button
+                    android:id="@+id/studyNextBtn"
+                    style="?buttonBarButtonStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/study_next"
+                    android:textColor="@android:color/white" />
+
+                <Button
+                    android:id="@+id/studyCloseBtn"
+                    style="?buttonBarButtonStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/study_close"
+                    android:textColor="@android:color/white" />
+
+                <Button
+                    android:id="@+id/studyCollapseBtn"
+                    style="?buttonBarButtonStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/study_collapse"
+                    android:textColor="@android:color/white" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/studyJapanese"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="8dp"
+                android:textColor="@android:color/white"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                tools:text="こんなことになるとも知らずに" />
+
+            <TextView
+                android:id="@+id/studyChinese"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="4dp"
+                android:textColor="#ffe082"
+                android:textSize="16sp"
+                tools:text="却完全不知道后来会变成这样。" />
+
+            <ScrollView
+                android:id="@+id/studyDetailsScroll"
+                android:layout_width="match_parent"
+                android:layout_height="160dp"
+                android:layout_marginTop="8dp"
+                android:fillViewport="true">
+
+                <TextView
+                    android:id="@+id/studyDetails"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:lineSpacingExtra="3dp"
+                    android:textColor="#eeeeee"
+                    android:textSize="14sp"
+                    tools:text="词汇\n知らずに（しらずに）：不知道就……\n\n语法\nVるとも知らずに：却不知道会……" />
+            </ScrollView>
         </LinearLayout>
 
         <TextView

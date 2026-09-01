@@ -359,6 +359,19 @@ internal class MPVView(context: Context, attrs: AttributeSet) : BaseMPVView(cont
         playbackSpeed = speeds[if (index == -1) 0 else index]
     }
 
+    fun setStudyLoop(start: Double, end: Double) {
+        MPVLib.setPropertyDouble("ab-loop-a", start)
+        MPVLib.setPropertyDouble("ab-loop-b", end)
+        timePos = start
+        playbackSpeed = 0.5
+        paused = false
+    }
+
+    fun clearStudyLoop() {
+        MPVLib.setPropertyString("ab-loop-a", "no")
+        MPVLib.setPropertyString("ab-loop-b", "no")
+    }
+
     fun getRepeat(): Int {
         return when (MPVLib.getPropertyString("loop-playlist") +
                 MPVLib.getPropertyString("loop-file")) {

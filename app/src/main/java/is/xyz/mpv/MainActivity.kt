@@ -7,7 +7,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        supportActionBar?.setTitle(R.string.mpv_activity)
+        supportActionBar?.setTitle(R.string.study_app_name)
 
         // The original plan was to have the file/doc picker live as fragments
         // under here but that requires refactoring I'm really not willing to figure out now.

@@ -4,6 +4,7 @@
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
     <!-- Simple strings. -->
     <string name="mpv_activity">mpv</string>
+    <string name="study_app_name" translatable="false">Mpv Study</string>
     <string name="label_share_intent">Play in mpv</string>
     <string name="title_activity_settings">Settings</string>
     <string name="dialog_ok">OK</string>
@@ -69,7 +70,7 @@
     <string name="action_playlist">Playlist</string>
     <string name="action_open_url">Open URL</string>
     <string name="action_open_doc">Open document</string>
-    <string name="action_open_doc_tree">Open document tree</string>
+    <string name="action_open_doc_tree">Open NAS folder</string>
     <string name="action_pick_file">Pick file</string>
     <string name="action_pick_file_old">Pick file (legacy)</string>
     <string name="action_external_storage">External storage</string>
@@ -155,13 +156,13 @@
     <string name="pref_gesture_vert_right_default" translatable="false">volume</string>
 
     <string name="pref_gesture_tap_left_title">Double tap (left)</string>
-    <string name="pref_gesture_tap_left_default" translatable="false">none</string>
+    <string name="pref_gesture_tap_left_default" translatable="false">seek</string>
 
     <string name="pref_gesture_tap_center_title">Double tap (center)</string>
     <string name="pref_gesture_tap_center_default" translatable="false">none</string>
 
     <string name="pref_gesture_tap_right_title">Double tap (right)</string>
-    <string name="pref_gesture_tap_right_default" translatable="false">none</string>
+    <string name="pref_gesture_tap_right_default" translatable="false">seek</string>
 
     <string name="pref_gesture_custom_helptext">When a tap gesture is set to \"Custom\" it can be bound to any command by editing input.conf. The key codes are <b>0x10001</b> (left), <b>0x10002</b> (center), <b>0x10003</b> (right).\nFor example you could bind to seeking by 6s:\n\t\t0x10003 no-osd seek 6</string>
 
@@ -212,4 +213,37 @@
     <!-- File picker -->
     <string name="nnf_name">Name</string>
     <string name="nnf_permission_external_write_denied">Permission to access file system denied</string>
+
+    <!-- Study mode -->
+    <string name="study_mode_activate">Study</string>
+    <string name="study_previous">Previous</string>
+    <string name="study_next">Next</string>
+    <string name="study_close">Close</string>
+    <string name="study_data_ready">Study data loaded</string>
+    <string name="study_data_missing">No matching .study.json found</string>
+    <string name="study_data_invalid">Could not read study data</string>
+    <string name="study_no_current_line">No dialogue at the current position</string>
+    <string name="study_vocabulary">Vocabulary</string>
+    <string name="study_grammar">Grammar</string>
+    <string name="study_listening">Listening</string>
+    <string name="study_translation_note">Translation note</string>
+    <string name="study_title_format">%1$s · %2$s · 0.5×</string>
+    <string name="study_drag_handle">↕ Drag to reposition</string>
+    <string name="study_collapse">Collapse</string>
+    <string name="study_expand">Expand</string>
+    <string name="webdav_title">NAS Library</string>
+    <string name="webdav_configure">Configure NAS</string>
+    <string name="webdav_server">Server URL</string>
+    <string name="webdav_root">Media root</string>
+    <string name="webdav_username">Username</string>
+    <string name="webdav_password">Password</string>
+    <string name="webdav_save">Save and connect</string>
+    <string name="webdav_empty">This folder contains no playable files</string>
+    <string name="webdav_connection_failed">Could not connect to NAS: %1$s</string>
+    <string name="webdav_certificate_title">Trust this NAS?</string>
+    <string name="webdav_certificate_message">Verify this SHA-256 certificate fingerprint on your Synology NAS, then trust it:\n\n%1$s</string>
+    <string name="webdav_trust">Trust</string>
+    <string name="webdav_up">Up</string>
+    <string name="webdav_checking_certificate">Checking NAS certificate…</string>
+    <string name="webdav_https_required">Use an HTTPS WebDAV address</string>
 </resources>

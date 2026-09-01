@@ -51,6 +51,7 @@ import androidx.media.AudioAttributesCompat
 import androidx.media.AudioFocusRequestCompat
 import androidx.media.AudioManagerCompat
 import java.io.File
+import java.net.URI
 import java.lang.IllegalArgumentException
 import kotlin.math.roundToInt
 
@@ -85,6 +86,19 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
 
     private lateinit var binding: PlayerBinding
     private lateinit var gestures: TouchGestures
+
+    private enum class StudyDataStatus { LOADING, READY, MISSING, INVALID }
+    private var studyDataStatus = StudyDataStatus.LOADING
+    private var studyCues: List<StudyCue> = emptyList()
+    private var activeStudyIndex = -1
+    private var speedBeforeStudy: Double? = null
+    private var studyLoadGeneration = 0
+    private var studyPanelCollapsed = false
+    private var studyDragStartRawY = 0f
+    private var studyDragStartTranslationY = 0f
+    private var sharedSubtitleUri: Uri? = null
+    private var sharedStudyUri: Uri? = null
+    private val webDavProxies = mutableListOf<WebDavProxyServer>()
 
     // convenience alias
     private val player get() = binding.player
@@ -195,6 +209,12 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
             nextBtn.setOnClickListener { playlistNext() }
             cycleAudioBtn.setOnClickListener { cycleAudio() }
             cycleSubsBtn.setOnClickListener { cycleSub() }
+            studyModeBtn.setOnClickListener { activateStudyModeForCurrentPosition() }
+            studyPreviousBtn.setOnClickListener { moveStudyCue(-1) }
+            studyNextBtn.setOnClickListener { moveStudyCue(1) }
+            studyCloseBtn.setOnClickListener { exitStudyMode() }
+            studyCollapseBtn.setOnClickListener { setStudyPanelCollapsed(!studyPanelCollapsed) }
+            studyDragHandle.setOnTouchListener { _, event -> handleStudyPanelDrag(event) }
             playBtn.setOnClickListener { player.cyclePause() }
             cycleDecoderBtn.setOnClickListener { player.cycleHwdec() }
             cycleSpeedBtn.setOnClickListener { cycleSpeed() }
@@ -291,6 +311,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
 
         // Parse the intent
         val filepath = parsePathFromIntent(intent)
+        onloadCommands.clear()
         if (intent.action == Intent.ACTION_VIEW) {
             parseIntentExtras(intent.extras)
         }
@@ -303,8 +324,10 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         }
 
         player.addObserver(this)
+        val playbackPath = proxyWebDavMedia(filepath)
         player.initialize(filesDir.path, cacheDir.path)
-        player.playFile(filepath)
+        player.playFile(playbackPath)
+        loadStudyData(filepath, intent)
 
         mediaSession = initMediaSession()
         updateMediaSession()
@@ -345,6 +368,9 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     override fun onDestroy() {
         Log.v(TAG, "Exiting.")
 
+        if (activeStudyIndex != -1)
+            player.clearStudyLoop()
+
         // Suppress any further callbacks
         activityIsForeground = false
 
@@ -372,6 +398,8 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         stopServiceRunnable.run()
 
         player.removeObserver(this)
+        webDavProxies.forEach(WebDavProxyServer::close)
+        webDavProxies.clear()
         player.destroy()
         super.onDestroy()
     }
@@ -387,18 +415,358 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
             return
         }
 
+        exitStudyMode()
+        onloadCommands.clear()
+        if (intent.action == Intent.ACTION_VIEW)
+            parseIntentExtras(intent.extras)
+        val playbackPath = proxyWebDavMedia(filepath)
+        loadStudyData(filepath, intent)
+
         if (!activityIsForeground && didResumeBackgroundPlayback) {
             if (this.newIntentReplace) {
-                MPVLib.command(arrayOf("loadfile", filepath, "replace"))
+                MPVLib.command(arrayOf("loadfile", playbackPath, "replace"))
                 showToast(getString(R.string.notice_file_play))
             } else {
-                MPVLib.command(arrayOf("loadfile", filepath, "append"))
+                MPVLib.command(arrayOf("loadfile", playbackPath, "append"))
                 showToast(getString(R.string.notice_file_appended))
             }
             moveTaskToBack(true)
         } else {
-            MPVLib.command(arrayOf("loadfile", filepath))
+            MPVLib.command(arrayOf("loadfile", playbackPath))
         }
+    }
+
+    private fun loadStudyData(mediaPath: String, sourceIntent: Intent?) {
+        val generation = ++studyLoadGeneration
+        studyCues = emptyList()
+        activeStudyIndex = -1
+        studyDataStatus = StudyDataStatus.LOADING
+        binding.studyModeBtn.isEnabled = false
+
+        val webDavStudyUrl = sourceIntent?.getStringExtra(EXTRA_WEBDAV_STUDY_URL)
+        val webDavSubtitleUrl = sourceIntent?.getStringExtra(EXTRA_WEBDAV_SUBTITLE_URL)
+        if (webDavStudyUrl != null || webDavSubtitleUrl != null) {
+            loadStudyDataFromWebDav(generation, webDavSubtitleUrl, webDavStudyUrl)
+            return
+        }
+
+        if (sharedSubtitleUri != null || sharedStudyUri != null) {
+            loadStudyDataFromSharedDocuments(
+                generation,
+                sharedSubtitleUri,
+                sharedStudyUri,
+            )
+            return
+        }
+
+        val treeUri = sourceIntent?.getStringExtra(EXTRA_STUDY_TREE_URI)?.let(Uri::parse)
+        val parentUri = sourceIntent?.getStringExtra(EXTRA_STUDY_PARENT_URI)?.let(Uri::parse)
+        val videoUri = sourceIntent?.data?.takeIf { it.scheme == "content" }
+        if (treeUri != null && parentUri != null && videoUri != null) {
+            loadStudyDataFromDocumentTree(generation, treeUri, parentUri, videoUri)
+            return
+        }
+
+        if (!mediaPath.startsWith('/')) {
+            studyDataStatus = StudyDataStatus.MISSING
+            binding.studyModeBtn.isEnabled = true
+            return
+        }
+
+        val mediaFile = File(mediaPath)
+        val baseName = mediaFile.name.substringBeforeLast('.', mediaFile.name)
+        val studyFile = File(mediaFile.parentFile, "$baseName.study.json")
+        if (!studyFile.isFile) {
+            studyDataStatus = StudyDataStatus.MISSING
+            binding.studyModeBtn.isEnabled = true
+            return
+        }
+
+        Thread {
+            try {
+                val parsed = StudyDataParser.parse(studyFile.readText())
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || generation != studyLoadGeneration)
+                        return@runOnUiThread
+                    studyCues = parsed
+                    studyDataStatus = StudyDataStatus.READY
+                    binding.studyModeBtn.isEnabled = true
+                    showToast(getString(R.string.study_data_ready))
+                }
+            } catch (error: Exception) {
+                Log.e(TAG, "Failed to load study data from $studyFile", error)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || generation != studyLoadGeneration)
+                        return@runOnUiThread
+                    studyDataStatus = StudyDataStatus.INVALID
+                    binding.studyModeBtn.isEnabled = true
+                }
+            }
+        }.start()
+    }
+
+    private fun proxyWebDavMedia(mediaPath: String): String {
+        val config = WebDavConfigStore(this).load() ?: return mediaPath
+        val client = runCatching { WebDavClient(config) }.getOrNull() ?: return mediaPath
+        if (!client.isAllowedUrl(mediaPath)) return mediaPath
+        return runCatching {
+            WebDavProxyServer(client, mediaPath).also(webDavProxies::add).playbackUrl
+        }.onFailure {
+            Log.e(TAG, "Failed to create local WebDAV media proxy", it)
+        }.getOrDefault(mediaPath)
+    }
+
+    private fun loadStudyDataFromDocumentTree(
+        generation: Int,
+        treeUri: Uri,
+        parentUri: Uri,
+        videoUri: Uri,
+    ) {
+        Thread {
+            try {
+                val companions = StudyDocumentResolver.find(
+                    contentResolver,
+                    treeUri,
+                    parentUri,
+                    videoUri,
+                )
+                val parsed = companions.studyData?.let {
+                    StudyDataParser.parse(StudyDocumentResolver.readText(contentResolver, it))
+                }
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || generation != studyLoadGeneration)
+                        return@runOnUiThread
+                    companions.subtitle?.let {
+                        MPVLib.command(arrayOf("sub-add", it.toString(), "select"))
+                    }
+                    if (parsed == null) {
+                        studyDataStatus = StudyDataStatus.MISSING
+                    } else {
+                        studyCues = parsed
+                        studyDataStatus = StudyDataStatus.READY
+                        showToast(getString(R.string.study_data_ready))
+                    }
+                    binding.studyModeBtn.isEnabled = true
+                }
+            } catch (error: Exception) {
+                Log.e(TAG, "Failed to load study companions for $videoUri", error)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || generation != studyLoadGeneration)
+                        return@runOnUiThread
+                    studyDataStatus = StudyDataStatus.INVALID
+                    binding.studyModeBtn.isEnabled = true
+                }
+            }
+        }.start()
+    }
+
+    private fun loadStudyDataFromSharedDocuments(
+        generation: Int,
+        subtitleUri: Uri?,
+        studyUri: Uri?,
+    ) {
+        Thread {
+            try {
+                val parsed = studyUri?.let {
+                    StudyDataParser.parse(StudyDocumentResolver.readText(contentResolver, it))
+                }
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || generation != studyLoadGeneration)
+                        return@runOnUiThread
+                    subtitleUri?.let {
+                        MPVLib.command(arrayOf("sub-add", it.toString(), "select"))
+                    }
+                    if (parsed == null) {
+                        studyDataStatus = StudyDataStatus.MISSING
+                    } else {
+                        studyCues = parsed
+                        studyDataStatus = StudyDataStatus.READY
+                        showToast(getString(R.string.study_data_ready))
+                    }
+                    binding.studyModeBtn.isEnabled = true
+                }
+            } catch (error: Exception) {
+                Log.e(TAG, "Failed to load shared study documents", error)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || generation != studyLoadGeneration)
+                        return@runOnUiThread
+                    studyDataStatus = StudyDataStatus.INVALID
+                    binding.studyModeBtn.isEnabled = true
+                }
+            }
+        }.start()
+    }
+
+    private fun loadStudyDataFromWebDav(
+        generation: Int,
+        subtitleUrl: String?,
+        studyUrl: String?,
+    ) {
+        Thread {
+            try {
+                val config = WebDavConfigStore(this).load()
+                    ?: throw IllegalStateException("NAS configuration is missing")
+                val client = WebDavClient(config)
+                require(subtitleUrl == null || client.isAllowedUrl(subtitleUrl)) {
+                    "WebDAV subtitle URL is outside the configured NAS directory"
+                }
+                require(studyUrl == null || client.isAllowedUrl(studyUrl)) {
+                    "WebDAV study URL is outside the configured NAS directory"
+                }
+                val parsed = studyUrl?.let { StudyDataParser.parse(client.readText(it)) }
+                val subtitleFile = subtitleUrl?.let { url ->
+                    val extension = URI(url).path.substringAfterLast('.', "srt")
+                        .lowercase().takeIf { it == "ass" || it == "srt" } ?: "srt"
+                    File(cacheDir, "webdav-study-subtitle-$generation.$extension").apply {
+                        writeText(client.readText(url))
+                    }
+                }
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || generation != studyLoadGeneration)
+                        return@runOnUiThread
+                    subtitleFile?.let {
+                        MPVLib.command(arrayOf("sub-add", it.absolutePath, "select"))
+                    }
+                    if (parsed == null) {
+                        studyDataStatus = StudyDataStatus.MISSING
+                    } else {
+                        studyCues = parsed
+                        studyDataStatus = StudyDataStatus.READY
+                        showToast(getString(R.string.study_data_ready))
+                    }
+                    binding.studyModeBtn.isEnabled = true
+                }
+            } catch (error: Exception) {
+                Log.e(TAG, "Failed to load WebDAV study companions", error)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || generation != studyLoadGeneration)
+                        return@runOnUiThread
+                    studyDataStatus = StudyDataStatus.INVALID
+                    binding.studyModeBtn.isEnabled = true
+                }
+            }
+        }.start()
+    }
+
+    private fun activateStudyModeForCurrentPosition() {
+        if (studyDataStatus != StudyDataStatus.READY) {
+            val message = if (studyDataStatus == StudyDataStatus.INVALID)
+                R.string.study_data_invalid
+            else
+                R.string.study_data_missing
+            showToast(getString(message))
+            return
+        }
+
+        val position = player.timePos ?: psc.positionSec.toDouble()
+        var index = studyCues.indexOfFirst { position >= it.start && position <= it.end }
+        if (index == -1) {
+            index = studyCues.indexOfLast { position > it.end }
+        }
+        if (index == -1) {
+            showToast(getString(R.string.study_no_current_line))
+            return
+        }
+        activateStudyCue(index)
+    }
+
+    private fun activateStudyCue(index: Int) {
+        if (index !in studyCues.indices)
+            return
+        if (activeStudyIndex == -1)
+            speedBeforeStudy = player.playbackSpeed ?: 1.0
+
+        activeStudyIndex = index
+        val cue = studyCues[index]
+        binding.studyTitle.text = getString(R.string.study_title_format, cue.id, cue.difficulty)
+        binding.studyJapanese.text = cue.japanese.ifBlank { cue.originalChinese }
+        binding.studyChinese.text = cue.naturalChinese
+        binding.studyDetails.text = formatStudyDetails(cue)
+        binding.studyPreviousBtn.isEnabled = index > 0
+        binding.studyNextBtn.isEnabled = index < studyCues.lastIndex
+        binding.studyPanel.visibility = View.VISIBLE
+        showControls()
+        player.setStudyLoop(cue.start, cue.end)
+    }
+
+    private fun moveStudyCue(offset: Int) {
+        if (activeStudyIndex == -1)
+            return
+        activateStudyCue((activeStudyIndex + offset).coerceIn(studyCues.indices))
+    }
+
+    private fun exitStudyMode() {
+        if (activeStudyIndex == -1)
+            return
+        player.clearStudyLoop()
+        speedBeforeStudy?.let { player.playbackSpeed = it }
+        speedBeforeStudy = null
+        activeStudyIndex = -1
+        binding.studyPanel.visibility = View.GONE
+        binding.studyPanel.translationY = 0f
+        setStudyPanelCollapsed(false)
+        showControls()
+    }
+
+    private fun setStudyPanelCollapsed(collapsed: Boolean) {
+        studyPanelCollapsed = collapsed
+        binding.studyJapanese.isVisible = !collapsed
+        binding.studyChinese.isVisible = !collapsed
+        binding.studyDetailsScroll.isVisible = !collapsed
+        binding.studyCollapseBtn.setText(
+            if (collapsed) R.string.study_expand else R.string.study_collapse
+        )
+    }
+
+    private fun handleStudyPanelDrag(event: MotionEvent): Boolean {
+        val panel = binding.studyPanel
+        return when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                studyDragStartRawY = event.rawY
+                studyDragStartTranslationY = panel.translationY
+                true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val desired = studyDragStartTranslationY + event.rawY - studyDragStartRawY
+                val minTranslation = -panel.top.toFloat()
+                val gap = Utils.convertDp(this, 12f)
+                val maxTranslation = (
+                    binding.controls.top.toFloat() - gap - panel.bottom
+                ).coerceAtLeast(0f)
+                panel.translationY = desired.coerceIn(minTranslation, maxTranslation)
+                true
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                panel.performClick()
+                true
+            }
+            else -> false
+        }
+    }
+
+    private fun formatStudyDetails(cue: StudyCue): String {
+        val sections = mutableListOf<String>()
+        if (cue.vocabulary.isNotEmpty()) {
+            val lines = cue.vocabulary.joinToString("\n") {
+                val reading = if (it.reading.isBlank() || it.reading == it.surface) "" else "【${it.reading}】"
+                "• ${it.surface}$reading ${it.meaning}\n  ${it.note}"
+            }
+            sections.add("${getString(R.string.study_vocabulary)}\n$lines")
+        }
+        if (cue.grammar.isNotEmpty()) {
+            val lines = cue.grammar.joinToString("\n") {
+                "• ${it.pattern}：${it.meaning}\n  ${it.explanation}"
+            }
+            sections.add("${getString(R.string.study_grammar)}\n$lines")
+        }
+        if (cue.listeningNotes.isNotEmpty()) {
+            val lines = cue.listeningNotes.joinToString("\n") { "• $it" }
+            sections.add("${getString(R.string.study_listening)}\n$lines")
+        }
+        if (cue.translationNote.isNotBlank()) {
+            sections.add("${getString(R.string.study_translation_note)}\n${cue.translationNote}")
+        }
+        return sections.joinToString("\n\n")
     }
 
     private fun updateAudioPresence() {
@@ -711,7 +1079,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     private fun controlsShouldBeVisible(): Boolean {
         if (lockedUI)
             return false
-        return useAudioUI || btnSelected != -1 || userIsOperatingSeekbar
+        return useAudioUI || btnSelected != -1 || userIsOperatingSeekbar || activeStudyIndex != -1
     }
 
     /** Make controls visible, also controls the timeout until they fade. */
@@ -1056,6 +1424,9 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     // Intent/Uri parsing
 
     private fun parsePathFromIntent(intent: Intent): String? {
+        sharedSubtitleUri = null
+        sharedStudyUri = null
+
         fun safeResolveUri(u: Uri?): String? {
             return if (u != null && u.isHierarchical && !u.isRelative)
                 resolveUri(u)
@@ -1084,6 +1455,25 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                 // Multiple shared files
                 val uris = IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
                 if (!uris.isNullOrEmpty()) {
+                    val namedUris = uris.mapNotNull { uri ->
+                        StudyDocumentResolver.displayName(contentResolver, uri)?.let { it to uri }
+                    }
+                    val media = namedUris.firstOrNull { (name, _) ->
+                        Utils.MEDIA_EXTENSIONS.contains(name.substringAfterLast('.', "").lowercase())
+                    }
+                    if (media != null) {
+                        val baseName = media.first.substringBeforeLast('.', media.first)
+                        sharedSubtitleUri = namedUris.firstOrNull { (name, _) ->
+                            name.equals("$baseName.zh.ass", ignoreCase = true) ||
+                                name.equals("$baseName.ass", ignoreCase = true) ||
+                                name.equals("$baseName.zh.srt", ignoreCase = true) ||
+                                name.equals("$baseName.srt", ignoreCase = true)
+                        }?.second
+                        sharedStudyUri = namedUris.firstOrNull { (name, _) ->
+                            name.equals("$baseName.study.json", ignoreCase = true)
+                        }?.second
+                        return safeResolveUri(media.second)
+                    }
                     val paths = uris.mapNotNull { uri ->
                         safeResolveUri(uri)
                     }
