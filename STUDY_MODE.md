@@ -36,6 +36,10 @@ Opening a video directly from another app does not include the parent-tree conte
 study-data discovery is only guaranteed when the NAS folder is opened from Mpv Study's home screen.
 Plain network URLs still require a media-to-study-data mapping layer.
 
+If the SMB app does not appear in Android's folder picker, select the video, bilingual subtitle,
+and matching `*.study.json` together in the SMB app and share all three to **Mpv Study**. The app
+recognizes the media and its companions by their shared base name instead of creating a playlist.
+
 ## Build
 
 The native libraries remain unmodified. Build them with the upstream `buildscripts` workflow, or

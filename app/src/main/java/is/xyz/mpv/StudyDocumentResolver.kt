@@ -67,7 +67,7 @@ object StudyDocumentResolver {
         resolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
             ?: throw IllegalStateException("Could not open $uri")
 
-    private fun displayName(resolver: ContentResolver, uri: Uri): String? {
+    fun displayName(resolver: ContentResolver, uri: Uri): String? {
         resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
             if (cursor.moveToFirst())
                 return cursor.getString(cursor.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME))

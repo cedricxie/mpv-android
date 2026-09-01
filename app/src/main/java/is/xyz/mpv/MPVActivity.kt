@@ -92,6 +92,8 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     private var activeStudyIndex = -1
     private var speedBeforeStudy: Double? = null
     private var studyLoadGeneration = 0
+    private var sharedSubtitleUri: Uri? = null
+    private var sharedStudyUri: Uri? = null
 
     // convenience alias
     private val player get() = binding.player
@@ -426,6 +428,15 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         studyDataStatus = StudyDataStatus.LOADING
         binding.studyModeBtn.isEnabled = false
 
+        if (sharedSubtitleUri != null || sharedStudyUri != null) {
+            loadStudyDataFromSharedDocuments(
+                generation,
+                sharedSubtitleUri,
+                sharedStudyUri,
+            )
+            return
+        }
+
         val treeUri = sourceIntent?.getStringExtra(EXTRA_STUDY_TREE_URI)?.let(Uri::parse)
         val parentUri = sourceIntent?.getStringExtra(EXTRA_STUDY_PARENT_URI)?.let(Uri::parse)
         val videoUri = sourceIntent?.data?.takeIf { it.scheme == "content" }
@@ -510,6 +521,46 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                 }
             } catch (error: Exception) {
                 Log.e(TAG, "Failed to load study companions for $videoUri", error)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || generation != studyLoadGeneration)
+                        return@runOnUiThread
+                    studyDataStatus = StudyDataStatus.INVALID
+                    binding.studyModeBtn.isEnabled = true
+                }
+            }
+        }.start()
+    }
+
+    private fun loadStudyDataFromSharedDocuments(
+        generation: Int,
+        subtitleUri: Uri?,
+        studyUri: Uri?,
+    ) {
+        Thread {
+            try {
+                val parsed = studyUri?.let {
+                    StudyDataParser.parse(StudyDocumentResolver.readText(contentResolver, it))
+                }
+                parsed?.let {
+                    require(it.zipWithNext().all { (first, second) -> first.start <= second.start })
+                }
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || generation != studyLoadGeneration)
+                        return@runOnUiThread
+                    subtitleUri?.let {
+                        MPVLib.command(arrayOf("sub-add", it.toString(), "select"))
+                    }
+                    if (parsed == null) {
+                        studyDataStatus = StudyDataStatus.MISSING
+                    } else {
+                        studyCues = parsed
+                        studyDataStatus = StudyDataStatus.READY
+                        showToast(getString(R.string.study_data_ready))
+                    }
+                    binding.studyModeBtn.isEnabled = true
+                }
+            } catch (error: Exception) {
+                Log.e(TAG, "Failed to load shared study documents", error)
                 runOnUiThread {
                     if (isFinishing || isDestroyed || generation != studyLoadGeneration)
                         return@runOnUiThread
@@ -1256,6 +1307,9 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     // Intent/Uri parsing
 
     private fun parsePathFromIntent(intent: Intent): String? {
+        sharedSubtitleUri = null
+        sharedStudyUri = null
+
         fun safeResolveUri(u: Uri?): String? {
             return if (u != null && u.isHierarchical && !u.isRelative)
                 resolveUri(u)
@@ -1284,6 +1338,25 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                 // Multiple shared files
                 val uris = IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
                 if (!uris.isNullOrEmpty()) {
+                    val namedUris = uris.mapNotNull { uri ->
+                        StudyDocumentResolver.displayName(contentResolver, uri)?.let { it to uri }
+                    }
+                    val media = namedUris.firstOrNull { (name, _) ->
+                        Utils.MEDIA_EXTENSIONS.contains(name.substringAfterLast('.', "").lowercase())
+                    }
+                    if (media != null) {
+                        val baseName = media.first.substringBeforeLast('.', media.first)
+                        sharedSubtitleUri = namedUris.firstOrNull { (name, _) ->
+                            name.equals("$baseName.zh.ass", ignoreCase = true) ||
+                                name.equals("$baseName.ass", ignoreCase = true) ||
+                                name.equals("$baseName.zh.srt", ignoreCase = true) ||
+                                name.equals("$baseName.srt", ignoreCase = true)
+                        }?.second
+                        sharedStudyUri = namedUris.firstOrNull { (name, _) ->
+                            name.equals("$baseName.study.json", ignoreCase = true)
+                        }?.second
+                        return safeResolveUri(media.second)
+                    }
                     val paths = uris.mapNotNull { uri ->
                         safeResolveUri(uri)
                     }
