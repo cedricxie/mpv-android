@@ -70,7 +70,7 @@
     <string name="action_playlist">Playlist</string>
     <string name="action_open_url">Open URL</string>
     <string name="action_open_doc">Open document</string>
-    <string name="action_open_doc_tree">Open document tree</string>
+    <string name="action_open_doc_tree">Open NAS folder</string>
     <string name="action_pick_file">Pick file</string>
     <string name="action_pick_file_old">Pick file (legacy)</string>
     <string name="action_external_storage">External storage</string>

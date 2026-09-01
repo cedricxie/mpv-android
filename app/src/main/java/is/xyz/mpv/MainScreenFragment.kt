@@ -52,11 +52,14 @@ class MainScreenFragment : Fragment(R.layout.fragment_main_screen) {
             if (it.resultCode != Activity.RESULT_OK) {
                 return@registerForActivityResult
             }
-            it.data?.getStringExtra("last_path")?.let { path ->
-                lastPath = path
-            }
+            val parentPath = it.data?.getStringExtra("last_path")
+            parentPath?.let { path -> lastPath = path }
             it.data?.getStringExtra("path")?.let { path ->
-                playFile(path)
+                playFile(
+                    filepath = path,
+                    treeUri = prevData?.takeIf { prev == "doc" },
+                    parentUri = parentPath?.takeIf { prev == "doc" },
+                )
             }
         }
         playerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -192,13 +195,17 @@ class MainScreenFragment : Fragment(R.layout.fragment_main_screen) {
         }
     }
 
-    private fun playFile(filepath: String) {
+    private fun playFile(filepath: String, treeUri: String? = null, parentUri: String? = null) {
         val i: Intent
         if (filepath.startsWith("content://")) {
             i = Intent(Intent.ACTION_VIEW, Uri.parse(filepath))
         } else {
             i = Intent()
             i.putExtra("filepath", filepath)
+        }
+        if (treeUri != null && parentUri != null) {
+            i.putExtra(EXTRA_STUDY_TREE_URI, treeUri)
+            i.putExtra(EXTRA_STUDY_PARENT_URI, parentUri)
         }
         i.setClass(requireContext(), MPVActivity::class.java)
         playerLauncher.launch(i)

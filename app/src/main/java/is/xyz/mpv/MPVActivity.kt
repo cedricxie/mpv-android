@@ -316,7 +316,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         player.addObserver(this)
         player.initialize(filesDir.path, cacheDir.path)
         player.playFile(filepath)
-        loadStudyData(filepath)
+        loadStudyData(filepath, intent)
 
         mediaSession = initMediaSession()
         updateMediaSession()
@@ -403,7 +403,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         }
 
         exitStudyMode()
-        loadStudyData(filepath)
+        loadStudyData(filepath, intent)
 
         if (!activityIsForeground && didResumeBackgroundPlayback) {
             if (this.newIntentReplace) {
@@ -419,12 +419,20 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         }
     }
 
-    private fun loadStudyData(mediaPath: String) {
+    private fun loadStudyData(mediaPath: String, sourceIntent: Intent?) {
         val generation = ++studyLoadGeneration
         studyCues = emptyList()
         activeStudyIndex = -1
         studyDataStatus = StudyDataStatus.LOADING
         binding.studyModeBtn.isEnabled = false
+
+        val treeUri = sourceIntent?.getStringExtra(EXTRA_STUDY_TREE_URI)?.let(Uri::parse)
+        val parentUri = sourceIntent?.getStringExtra(EXTRA_STUDY_PARENT_URI)?.let(Uri::parse)
+        val videoUri = sourceIntent?.data?.takeIf { it.scheme == "content" }
+        if (treeUri != null && parentUri != null && videoUri != null) {
+            loadStudyDataFromDocumentTree(generation, treeUri, parentUri, videoUri)
+            return
+        }
 
         if (!mediaPath.startsWith('/')) {
             studyDataStatus = StudyDataStatus.MISSING
@@ -455,6 +463,53 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                 }
             } catch (error: Exception) {
                 Log.e(TAG, "Failed to load study data from $studyFile", error)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || generation != studyLoadGeneration)
+                        return@runOnUiThread
+                    studyDataStatus = StudyDataStatus.INVALID
+                    binding.studyModeBtn.isEnabled = true
+                }
+            }
+        }.start()
+    }
+
+    private fun loadStudyDataFromDocumentTree(
+        generation: Int,
+        treeUri: Uri,
+        parentUri: Uri,
+        videoUri: Uri,
+    ) {
+        Thread {
+            try {
+                val companions = StudyDocumentResolver.find(
+                    contentResolver,
+                    treeUri,
+                    parentUri,
+                    videoUri,
+                )
+                val parsed = companions.studyData?.let {
+                    StudyDataParser.parse(StudyDocumentResolver.readText(contentResolver, it))
+                }
+                parsed?.let {
+                    require(it.zipWithNext().all { (first, second) -> first.start <= second.start })
+                }
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || generation != studyLoadGeneration)
+                        return@runOnUiThread
+                    companions.subtitle?.let {
+                        MPVLib.command(arrayOf("sub-add", it.toString(), "select"))
+                    }
+                    if (parsed == null) {
+                        studyDataStatus = StudyDataStatus.MISSING
+                    } else {
+                        studyCues = parsed
+                        studyDataStatus = StudyDataStatus.READY
+                        showToast(getString(R.string.study_data_ready))
+                    }
+                    binding.studyModeBtn.isEnabled = true
+                }
+            } catch (error: Exception) {
+                Log.e(TAG, "Failed to load study companions for $videoUri", error)
                 runOnUiThread {
                     if (isFinishing || isDestroyed || generation != studyLoadGeneration)
                         return@runOnUiThread

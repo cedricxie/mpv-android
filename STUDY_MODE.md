@@ -25,8 +25,16 @@ mpv loads the external ASS subtitle for normal bilingual playback. The app disco
 - Previous/next changes the loop to the adjacent cue.
 - Close clears the A/B loop and restores the speed used before entering study mode.
 
-Network URLs and non-resolvable `content://` URIs do not yet support adjacent study-data discovery.
-They require a media-to-study-data mapping layer in a future iteration.
+## NAS folders through Android document providers
+
+Tap **Open NAS folder** and choose an SMB folder from a document-provider app such as CX File
+Explorer. The selected tree permission is persisted by Android. When a video is chosen through the
+in-app browser, the app queries that video's parent document and loads the same-name subtitle and
+study-data documents through `content://` URIs.
+
+Opening a video directly from another app does not include the parent-tree context, so adjacent
+study-data discovery is only guaranteed when the NAS folder is opened from Mpv Study's home screen.
+Plain network URLs still require a media-to-study-data mapping layer.
 
 ## Build
 
