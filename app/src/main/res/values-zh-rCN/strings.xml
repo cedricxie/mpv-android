@@ -195,4 +195,7 @@
     <string name="study_listening">听力提示</string>
     <string name="study_translation_note">翻译说明</string>
     <string name="study_title_format">%1$s · %2$s · 0.5×</string>
+    <string name="study_drag_handle">↕ 拖动调整位置</string>
+    <string name="study_collapse">收起</string>
+    <string name="study_expand">展开</string>
 </resources>

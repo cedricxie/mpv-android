@@ -92,6 +92,9 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     private var activeStudyIndex = -1
     private var speedBeforeStudy: Double? = null
     private var studyLoadGeneration = 0
+    private var studyPanelCollapsed = false
+    private var studyDragStartRawY = 0f
+    private var studyDragStartTranslationY = 0f
     private var sharedSubtitleUri: Uri? = null
     private var sharedStudyUri: Uri? = null
 
@@ -208,6 +211,8 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
             studyPreviousBtn.setOnClickListener { moveStudyCue(-1) }
             studyNextBtn.setOnClickListener { moveStudyCue(1) }
             studyCloseBtn.setOnClickListener { exitStudyMode() }
+            studyCollapseBtn.setOnClickListener { setStudyPanelCollapsed(!studyPanelCollapsed) }
+            studyDragHandle.setOnTouchListener { _, event -> handleStudyPanelDrag(event) }
             playBtn.setOnClickListener { player.cyclePause() }
             cycleDecoderBtn.setOnClickListener { player.cycleHwdec() }
             cycleSpeedBtn.setOnClickListener { cycleSpeed() }
@@ -608,6 +613,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         binding.studyPreviousBtn.isEnabled = index > 0
         binding.studyNextBtn.isEnabled = index < studyCues.lastIndex
         binding.studyPanel.visibility = View.VISIBLE
+        showControls()
         player.setStudyLoop(cue.start, cue.end)
     }
 
@@ -625,6 +631,45 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         speedBeforeStudy = null
         activeStudyIndex = -1
         binding.studyPanel.visibility = View.GONE
+        binding.studyPanel.translationY = 0f
+        setStudyPanelCollapsed(false)
+        showControls()
+    }
+
+    private fun setStudyPanelCollapsed(collapsed: Boolean) {
+        studyPanelCollapsed = collapsed
+        binding.studyJapanese.isVisible = !collapsed
+        binding.studyChinese.isVisible = !collapsed
+        binding.studyDetailsScroll.isVisible = !collapsed
+        binding.studyCollapseBtn.setText(
+            if (collapsed) R.string.study_expand else R.string.study_collapse
+        )
+    }
+
+    private fun handleStudyPanelDrag(event: MotionEvent): Boolean {
+        val panel = binding.studyPanel
+        return when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                studyDragStartRawY = event.rawY
+                studyDragStartTranslationY = panel.translationY
+                true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val desired = studyDragStartTranslationY + event.rawY - studyDragStartRawY
+                val minTranslation = -panel.top.toFloat()
+                val gap = Utils.convertDp(this, 12f)
+                val maxTranslation = (
+                    binding.controls.top.toFloat() - gap - panel.bottom
+                ).coerceAtLeast(0f)
+                panel.translationY = desired.coerceIn(minTranslation, maxTranslation)
+                true
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                panel.performClick()
+                true
+            }
+            else -> false
+        }
     }
 
     private fun formatStudyDetails(cue: StudyCue): String {
@@ -962,7 +1007,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     private fun controlsShouldBeVisible(): Boolean {
         if (lockedUI)
             return false
-        return useAudioUI || btnSelected != -1 || userIsOperatingSeekbar
+        return useAudioUI || btnSelected != -1 || userIsOperatingSeekbar || activeStudyIndex != -1
     }
 
     /** Make controls visible, also controls the timeout until they fade. */

@@ -228,4 +228,7 @@
     <string name="study_listening">Listening</string>
     <string name="study_translation_note">Translation note</string>
     <string name="study_title_format">%1$s · %2$s · 0.5×</string>
+    <string name="study_drag_handle">↕ Drag to reposition</string>
+    <string name="study_collapse">Collapse</string>
+    <string name="study_expand">Expand</string>
 </resources>
