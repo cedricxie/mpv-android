@@ -28,13 +28,12 @@ data class WebDavEntry(
 
 data class WebDavServerCertificate(
     val fingerprint: String,
-    val pem: String,
 )
 
 class CertificateTrustRequired(val fingerprint: String) : Exception()
 
 class WebDavClient(private val config: WebDavConfig) {
-    val authorizationHeader: String = Credentials.basic(config.username, config.password)
+    private val authorizationHeader: String = Credentials.basic(config.username, config.password)
     private val serverUri = URI(config.serverUrl)
 
     init {
@@ -52,6 +51,9 @@ class WebDavClient(private val config: WebDavConfig) {
         } else {
             baseClient().build()
         }
+    }
+    private val streamingClient: OkHttpClient by lazy {
+        client.newBuilder().readTimeout(0, TimeUnit.SECONDS).build()
     }
 
     fun list(path: String): List<WebDavEntry> {
@@ -126,6 +128,16 @@ class WebDavClient(private val config: WebDavConfig) {
         }
     }
 
+    internal fun executeMediaRequest(url: String, range: String?): okhttp3.Response {
+        require(isAllowedUrl(url)) { "WebDAV media URL is outside the configured NAS directory" }
+        val request = Request.Builder()
+            .url(url)
+            .header("Authorization", authorizationHeader)
+            .apply { if (!range.isNullOrBlank()) header("Range", range) }
+            .build()
+        return streamingClient.newCall(request).execute()
+    }
+
     fun probeCertificate(): WebDavServerCertificate {
         val trustManager = trustAllManager()
         val sslContext = SSLContext.getInstance("TLS").apply {
@@ -141,7 +153,6 @@ class WebDavClient(private val config: WebDavConfig) {
                 ?: throw IllegalStateException("NAS 没有提供 TLS 证书")
             return WebDavServerCertificate(
                 fingerprint = fingerprint(certificate),
-                pem = certificatePem(certificate),
             )
         }
     }
@@ -202,6 +213,8 @@ class WebDavClient(private val config: WebDavConfig) {
     private fun baseClient() = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
+        .followRedirects(false)
+        .followSslRedirects(false)
 
     private fun trustAllManager() = object : X509TrustManager {
         override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
@@ -212,15 +225,6 @@ class WebDavClient(private val config: WebDavConfig) {
     private fun fingerprint(certificate: X509Certificate): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(certificate.encoded)
         return digest.joinToString(":") { "%02X".format(it) }
-    }
-
-    private fun certificatePem(certificate: X509Certificate): String {
-        val encoded = android.util.Base64.encodeToString(certificate.encoded, android.util.Base64.NO_WRAP)
-        return buildString {
-            appendLine("-----BEGIN CERTIFICATE-----")
-            encoded.chunked(64).forEach(::appendLine)
-            appendLine("-----END CERTIFICATE-----")
-        }
     }
 
     companion object {

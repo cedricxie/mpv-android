@@ -32,9 +32,9 @@ Synology WebDAV server, media root, username, and password. The password is encr
 Android Keystore key.
 
 The first HTTPS connection asks the user to trust the NAS certificate fingerprint; later
-connections are pinned to that fingerprint. The trusted certificate is also used as mpv's CA for
-that NAS file, so TLS verification remains enabled during streaming. WebDAV authorization is set as
-a file-local option and is never reused for unrelated URLs. Matching subtitle and `*.study.json`
+connections are pinned to that fingerprint. Video is streamed to mpv through a random, loopback-only
+HTTP bridge. The bridge handles HTTP Range requests and connects to the NAS with pinned HTTPS, so NAS
+credentials never enter mpv or get reused for unrelated URLs. Matching subtitle and `*.study.json`
 companions must be on the configured NAS origin and under the configured media root.
 
 ## NAS folders through Android document providers (fallback)

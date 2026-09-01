@@ -51,6 +51,7 @@ import androidx.media.AudioAttributesCompat
 import androidx.media.AudioFocusRequestCompat
 import androidx.media.AudioManagerCompat
 import java.io.File
+import java.net.URI
 import java.lang.IllegalArgumentException
 import kotlin.math.roundToInt
 
@@ -97,6 +98,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     private var studyDragStartTranslationY = 0f
     private var sharedSubtitleUri: Uri? = null
     private var sharedStudyUri: Uri? = null
+    private val webDavProxies = mutableListOf<WebDavProxyServer>()
 
     // convenience alias
     private val player get() = binding.player
@@ -322,9 +324,9 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         }
 
         player.addObserver(this)
-        queueWebDavPlaybackOptions(filepath)
+        val playbackPath = proxyWebDavMedia(filepath)
         player.initialize(filesDir.path, cacheDir.path)
-        player.playFile(filepath)
+        player.playFile(playbackPath)
         loadStudyData(filepath, intent)
 
         mediaSession = initMediaSession()
@@ -396,6 +398,8 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         stopServiceRunnable.run()
 
         player.removeObserver(this)
+        webDavProxies.forEach(WebDavProxyServer::close)
+        webDavProxies.clear()
         player.destroy()
         super.onDestroy()
     }
@@ -415,20 +419,20 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         onloadCommands.clear()
         if (intent.action == Intent.ACTION_VIEW)
             parseIntentExtras(intent.extras)
-        queueWebDavPlaybackOptions(filepath)
+        val playbackPath = proxyWebDavMedia(filepath)
         loadStudyData(filepath, intent)
 
         if (!activityIsForeground && didResumeBackgroundPlayback) {
             if (this.newIntentReplace) {
-                MPVLib.command(arrayOf("loadfile", filepath, "replace"))
+                MPVLib.command(arrayOf("loadfile", playbackPath, "replace"))
                 showToast(getString(R.string.notice_file_play))
             } else {
-                MPVLib.command(arrayOf("loadfile", filepath, "append"))
+                MPVLib.command(arrayOf("loadfile", playbackPath, "append"))
                 showToast(getString(R.string.notice_file_appended))
             }
             moveTaskToBack(true)
         } else {
-            MPVLib.command(arrayOf("loadfile", filepath))
+            MPVLib.command(arrayOf("loadfile", playbackPath))
         }
     }
 
@@ -501,28 +505,15 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         }.start()
     }
 
-    private fun queueWebDavPlaybackOptions(mediaPath: String) {
-        val store = WebDavConfigStore(this)
-        val config = store.load() ?: return
-        val client = runCatching { WebDavClient(config) }.getOrNull() ?: return
-        if (!client.isAllowedUrl(mediaPath)) return
-        val certificatePath = store.trustedCertificatePath() ?: return
-
-        onloadCommands.add(arrayOf(
-            "set",
-            "file-local-options/http-header-fields",
-            "Authorization: ${client.authorizationHeader}",
-        ))
-        onloadCommands.add(arrayOf(
-            "set",
-            "file-local-options/tls-verify",
-            "yes",
-        ))
-        onloadCommands.add(arrayOf(
-            "set",
-            "file-local-options/tls-ca-file",
-            certificatePath,
-        ))
+    private fun proxyWebDavMedia(mediaPath: String): String {
+        val config = WebDavConfigStore(this).load() ?: return mediaPath
+        val client = runCatching { WebDavClient(config) }.getOrNull() ?: return mediaPath
+        if (!client.isAllowedUrl(mediaPath)) return mediaPath
+        return runCatching {
+            WebDavProxyServer(client, mediaPath).also(webDavProxies::add).playbackUrl
+        }.onFailure {
+            Log.e(TAG, "Failed to create local WebDAV media proxy", it)
+        }.getOrDefault(mediaPath)
     }
 
     private fun loadStudyDataFromDocumentTree(
@@ -623,11 +614,18 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                     "WebDAV study URL is outside the configured NAS directory"
                 }
                 val parsed = studyUrl?.let { StudyDataParser.parse(client.readText(it)) }
+                val subtitleFile = subtitleUrl?.let { url ->
+                    val extension = URI(url).path.substringAfterLast('.', "srt")
+                        .lowercase().takeIf { it == "ass" || it == "srt" } ?: "srt"
+                    File(cacheDir, "webdav-study-subtitle-$generation.$extension").apply {
+                        writeText(client.readText(url))
+                    }
+                }
                 runOnUiThread {
                     if (isFinishing || isDestroyed || generation != studyLoadGeneration)
                         return@runOnUiThread
-                    subtitleUrl?.let {
-                        MPVLib.command(arrayOf("sub-add", it, "select"))
+                    subtitleFile?.let {
+                        MPVLib.command(arrayOf("sub-add", it.absolutePath, "select"))
                     }
                     if (parsed == null) {
                         studyDataStatus = StudyDataStatus.MISSING

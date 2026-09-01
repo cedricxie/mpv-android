@@ -59,7 +59,7 @@ class WebDavBrowserActivity : AppCompatActivity() {
         config = newConfig
         client = WebDavClient(newConfig)
         currentPath = WebDavConfigStore.normalizeRoot(newConfig.rootPath)
-        if (newConfig.certificateFingerprint == null || store.trustedCertificatePath() == null) {
+        if (newConfig.certificateFingerprint == null) {
             probeCertificate(newConfig)
             return
         }
@@ -76,16 +76,7 @@ class WebDavBrowserActivity : AppCompatActivity() {
                 val certificate = WebDavClient(activeConfig).probeCertificate()
                 runOnUiThread {
                     if (isFinishing) return@runOnUiThread
-                    if (activeConfig.certificateFingerprint.equals(
-                            certificate.fingerprint,
-                            ignoreCase = true,
-                        )
-                    ) {
-                        store.saveTrustedCertificate(certificate.pem)
-                        connect(activeConfig)
-                    } else {
-                        showCertificateDialog(certificate)
-                    }
+                    showCertificateDialog(certificate)
                 }
             } catch (error: Exception) {
                 Log.e(TAG, "Certificate probe failed", error)
@@ -180,7 +171,6 @@ class WebDavBrowserActivity : AppCompatActivity() {
                     certificateFingerprint = certificate.fingerprint,
                 ) ?: return@setPositiveButton
                 store.save(trusted)
-                store.saveTrustedCertificate(certificate.pem)
                 connect(trusted)
             }
             .setNegativeButton(R.string.dialog_cancel) { _, _ -> finish() }
