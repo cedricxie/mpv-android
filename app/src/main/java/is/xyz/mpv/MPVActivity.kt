@@ -716,7 +716,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         binding.studyNextBtn.isEnabled = index < studyCues.lastIndex
         binding.studyPanel.visibility = View.VISIBLE
         showControls()
-        player.setStudyLoop(cue.start, cue.end)
+        player.setStudyLoop(cue.loopStart, cue.loopEnd)
     }
 
     private fun moveStudyCue(offset: Int) {

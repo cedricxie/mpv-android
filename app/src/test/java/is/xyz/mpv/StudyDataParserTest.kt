@@ -27,6 +27,20 @@ class StudyDataParserTest {
     }
 
     @Test
+    fun acceptsLoopBoundaryPadding() {
+        val cue = cue("one", 1.0, 2.0, loopStart = 0.8, loopEnd = 2.3)
+
+        assertEquals(listOf(cue), StudyDataParser.validate(listOf(cue)))
+    }
+
+    @Test
+    fun rejectsLoopThatCutsOffCue() {
+        assertThrows(IllegalArgumentException::class.java) {
+            StudyDataParser.validate(listOf(cue("bad", 1.0, 2.0, loopEnd = 1.9)))
+        }
+    }
+
+    @Test
     fun rejectsDuplicateIds() {
         assertThrows(IllegalArgumentException::class.java) {
             StudyDataParser.validate(listOf(cue("same", 1.0, 2.0), cue("same", 3.0, 4.0)))
@@ -40,10 +54,18 @@ class StudyDataParserTest {
         }
     }
 
-    private fun cue(id: String, start: Double, end: Double) = StudyCue(
+    private fun cue(
+        id: String,
+        start: Double,
+        end: Double,
+        loopStart: Double = start,
+        loopEnd: Double = end,
+    ) = StudyCue(
         id = id,
         start = start,
         end = end,
+        loopStart = loopStart,
+        loopEnd = loopEnd,
         kind = "dialogue",
         japanese = "日本語",
         originalChinese = "中文",
