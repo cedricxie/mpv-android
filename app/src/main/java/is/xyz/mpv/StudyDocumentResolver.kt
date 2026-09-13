@@ -9,11 +9,43 @@ const val EXTRA_STUDY_TREE_URI = "study_tree_uri"
 const val EXTRA_STUDY_PARENT_URI = "study_parent_uri"
 
 data class StudyCompanionFiles(
-    val subtitle: Uri?,
+    val primarySubtitle: Uri?,
+    val secondarySubtitle: Uri?,
     val studyData: Uri?,
 )
 
+data class StudyCompanionNames(
+    val primarySubtitle: String?,
+    val secondarySubtitle: String?,
+    val studyData: String?,
+)
+
 object StudyDocumentResolver {
+    fun findNames(names: Collection<String>, baseName: String): StudyCompanionNames {
+        val available = names.associateBy { it.lowercase() }
+        fun first(vararg candidates: String): String? = candidates.firstNotNullOfOrNull {
+            available[it.lowercase()]
+        }
+
+        val primarySubtitle = first(
+            "$baseName.zh.ass",
+            "$baseName.ass",
+            "$baseName.zh.srt",
+            "$baseName.srt",
+        )
+        val hasExplicitChinese = primarySubtitle.equals("$baseName.zh.ass", ignoreCase = true) ||
+            primarySubtitle.equals("$baseName.zh.srt", ignoreCase = true)
+        val secondarySubtitle = if (hasExplicitChinese)
+            first("$baseName.ja.ass", "$baseName.ja.srt")
+        else
+            null
+        return StudyCompanionNames(
+            primarySubtitle = primarySubtitle,
+            secondarySubtitle = secondarySubtitle,
+            studyData = first("$baseName.study.json"),
+        )
+    }
+
     fun find(
         resolver: ContentResolver,
         treeUri: Uri,
@@ -50,16 +82,11 @@ object StudyDocumentResolver {
             }
         }
 
-        val subtitleNames = listOf(
-            "$baseName.zh.ass",
-            "$baseName.ass",
-            "$baseName.zh.srt",
-            "$baseName.srt",
-        )
-        val subtitle = subtitleNames.firstNotNullOfOrNull { documents[it.lowercase()] }
+        val names = findNames(documents.keys, baseName)
         return StudyCompanionFiles(
-            subtitle = subtitle,
-            studyData = documents["$baseName.study.json".lowercase()],
+            primarySubtitle = names.primarySubtitle?.let { documents[it.lowercase()] },
+            secondarySubtitle = names.secondarySubtitle?.let { documents[it.lowercase()] },
+            studyData = names.studyData?.let { documents[it.lowercase()] },
         )
     }
 

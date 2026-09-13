@@ -97,6 +97,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     private var studyDragStartRawY = 0f
     private var studyDragStartTranslationY = 0f
     private var sharedSubtitleUri: Uri? = null
+    private var sharedSecondarySubtitleUri: Uri? = null
     private var sharedStudyUri: Uri? = null
     private val webDavProxies = mutableListOf<WebDavProxyServer>()
 
@@ -445,15 +446,23 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
 
         val webDavStudyUrl = sourceIntent?.getStringExtra(EXTRA_WEBDAV_STUDY_URL)
         val webDavSubtitleUrl = sourceIntent?.getStringExtra(EXTRA_WEBDAV_SUBTITLE_URL)
-        if (webDavStudyUrl != null || webDavSubtitleUrl != null) {
-            loadStudyDataFromWebDav(generation, webDavSubtitleUrl, webDavStudyUrl)
+        val webDavSecondarySubtitleUrl =
+            sourceIntent?.getStringExtra(EXTRA_WEBDAV_SECONDARY_SUBTITLE_URL)
+        if (webDavStudyUrl != null || webDavSubtitleUrl != null || webDavSecondarySubtitleUrl != null) {
+            loadStudyDataFromWebDav(
+                generation,
+                webDavSubtitleUrl,
+                webDavSecondarySubtitleUrl,
+                webDavStudyUrl,
+            )
             return
         }
 
-        if (sharedSubtitleUri != null || sharedStudyUri != null) {
+        if (sharedSubtitleUri != null || sharedSecondarySubtitleUri != null || sharedStudyUri != null) {
             loadStudyDataFromSharedDocuments(
                 generation,
                 sharedSubtitleUri,
+                sharedSecondarySubtitleUri,
                 sharedStudyUri,
             )
             return
@@ -516,6 +525,18 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         }.getOrDefault(mediaPath)
     }
 
+    private fun addStudySubtitles(primary: String?, secondary: String?) {
+        val secondaryId = secondary?.let {
+            MPVLib.command(arrayOf("sub-add", it, "select", "", "ja"))
+            player.sid.takeIf { id -> id != -1 }
+        }
+        primary?.let {
+            MPVLib.command(arrayOf("sub-add", it, "select", "", "zh"))
+        }
+        if (primary != null && secondaryId != null && secondaryId != player.sid)
+            player.secondarySid = secondaryId
+    }
+
     private fun loadStudyDataFromDocumentTree(
         generation: Int,
         treeUri: Uri,
@@ -536,9 +557,10 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                 runOnUiThread {
                     if (isFinishing || isDestroyed || generation != studyLoadGeneration)
                         return@runOnUiThread
-                    companions.subtitle?.let {
-                        MPVLib.command(arrayOf("sub-add", it.toString(), "select"))
-                    }
+                    addStudySubtitles(
+                        companions.primarySubtitle?.toString(),
+                        companions.secondarySubtitle?.toString(),
+                    )
                     if (parsed == null) {
                         studyDataStatus = StudyDataStatus.MISSING
                     } else {
@@ -563,6 +585,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     private fun loadStudyDataFromSharedDocuments(
         generation: Int,
         subtitleUri: Uri?,
+        secondarySubtitleUri: Uri?,
         studyUri: Uri?,
     ) {
         Thread {
@@ -573,9 +596,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                 runOnUiThread {
                     if (isFinishing || isDestroyed || generation != studyLoadGeneration)
                         return@runOnUiThread
-                    subtitleUri?.let {
-                        MPVLib.command(arrayOf("sub-add", it.toString(), "select"))
-                    }
+                    addStudySubtitles(subtitleUri?.toString(), secondarySubtitleUri?.toString())
                     if (parsed == null) {
                         studyDataStatus = StudyDataStatus.MISSING
                     } else {
@@ -600,6 +621,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     private fun loadStudyDataFromWebDav(
         generation: Int,
         subtitleUrl: String?,
+        secondarySubtitleUrl: String?,
         studyUrl: String?,
     ) {
         Thread {
@@ -610,23 +632,31 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                 require(subtitleUrl == null || client.isAllowedUrl(subtitleUrl)) {
                     "WebDAV subtitle URL is outside the configured NAS directory"
                 }
+                require(
+                    secondarySubtitleUrl == null || client.isAllowedUrl(secondarySubtitleUrl)
+                ) {
+                    "WebDAV secondary subtitle URL is outside the configured NAS directory"
+                }
                 require(studyUrl == null || client.isAllowedUrl(studyUrl)) {
                     "WebDAV study URL is outside the configured NAS directory"
                 }
                 val parsed = studyUrl?.let { StudyDataParser.parse(client.readText(it)) }
-                val subtitleFile = subtitleUrl?.let { url ->
+                fun cacheSubtitle(url: String?, role: String): File? = url?.let {
                     val extension = URI(url).path.substringAfterLast('.', "srt")
                         .lowercase().takeIf { it == "ass" || it == "srt" } ?: "srt"
-                    File(cacheDir, "webdav-study-subtitle-$generation.$extension").apply {
+                    File(cacheDir, "webdav-study-$role-subtitle-$generation.$extension").apply {
                         writeText(client.readText(url))
                     }
                 }
+                val subtitleFile = cacheSubtitle(subtitleUrl, "primary")
+                val secondarySubtitleFile = cacheSubtitle(secondarySubtitleUrl, "secondary")
                 runOnUiThread {
                     if (isFinishing || isDestroyed || generation != studyLoadGeneration)
                         return@runOnUiThread
-                    subtitleFile?.let {
-                        MPVLib.command(arrayOf("sub-add", it.absolutePath, "select"))
-                    }
+                    addStudySubtitles(
+                        subtitleFile?.absolutePath,
+                        secondarySubtitleFile?.absolutePath,
+                    )
                     if (parsed == null) {
                         studyDataStatus = StudyDataStatus.MISSING
                     } else {
@@ -1425,6 +1455,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
 
     private fun parsePathFromIntent(intent: Intent): String? {
         sharedSubtitleUri = null
+        sharedSecondarySubtitleUri = null
         sharedStudyUri = null
 
         fun safeResolveUri(u: Uri?): String? {
@@ -1463,15 +1494,15 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                     }
                     if (media != null) {
                         val baseName = media.first.substringBeforeLast('.', media.first)
-                        sharedSubtitleUri = namedUris.firstOrNull { (name, _) ->
-                            name.equals("$baseName.zh.ass", ignoreCase = true) ||
-                                name.equals("$baseName.ass", ignoreCase = true) ||
-                                name.equals("$baseName.zh.srt", ignoreCase = true) ||
-                                name.equals("$baseName.srt", ignoreCase = true)
-                        }?.second
-                        sharedStudyUri = namedUris.firstOrNull { (name, _) ->
-                            name.equals("$baseName.study.json", ignoreCase = true)
-                        }?.second
+                        val byName = namedUris.associate { (name, uri) -> name.lowercase() to uri }
+                        val companions = StudyDocumentResolver.findNames(byName.keys, baseName)
+                        sharedSubtitleUri = companions.primarySubtitle?.let {
+                            byName[it.lowercase()]
+                        }
+                        sharedSecondarySubtitleUri = companions.secondarySubtitle?.let {
+                            byName[it.lowercase()]
+                        }
+                        sharedStudyUri = companions.studyData?.let { byName[it.lowercase()] }
                         return safeResolveUri(media.second)
                     }
                     val paths = uris.mapNotNull { uri ->
