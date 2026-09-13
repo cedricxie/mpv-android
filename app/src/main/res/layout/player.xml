@@ -269,6 +269,7 @@
                 android:layout_height="wrap_content"
                 android:paddingTop="8dp"
                 android:textColor="@android:color/white"
+                android:textIsSelectable="true"
                 android:textSize="20sp"
                 android:textStyle="bold"
                 tools:text="こんなことになるとも知らずに" />
@@ -279,6 +280,7 @@
                 android:layout_height="wrap_content"
                 android:paddingTop="4dp"
                 android:textColor="#ffe082"
+                android:textIsSelectable="true"
                 android:textSize="16sp"
                 tools:text="却完全不知道后来会变成这样。" />
 
@@ -295,6 +297,7 @@
                     android:layout_height="wrap_content"
                     android:lineSpacingExtra="3dp"
                     android:textColor="#eeeeee"
+                    android:textIsSelectable="true"
                     android:textSize="14sp"
                     tools:text="词汇\n知らずに（しらずに）：不知道就……\n\n语法\nVるとも知らずに：却不知道会……" />
             </ScrollView>
