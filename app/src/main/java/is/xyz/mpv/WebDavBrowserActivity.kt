@@ -61,6 +61,8 @@ class WebDavBrowserActivity : AppCompatActivity() {
         config = newConfig
         client = WebDavClient(newConfig)
         currentPath = WebDavConfigStore.normalizeRoot(newConfig.rootPath)
+        allEntries = emptyList()
+        (binding.webdavList.adapter as EntryAdapter).submit(emptyList())
         binding.webdavSwitchButton.text = newConfig.name
         binding.webdavSwitchButton.contentDescription = getString(R.string.webdav_switch)
         if (newConfig.certificateFingerprint == null) {
@@ -71,6 +73,7 @@ class WebDavBrowserActivity : AppCompatActivity() {
     }
 
     private fun probeCertificate(activeConfig: WebDavConfig) {
+        val generation = ++loadGeneration
         binding.webdavProgress.isVisible = true
         binding.webdavMessage.isVisible = true
         binding.webdavMessage.setTextColor(0xffeeeeee.toInt())
@@ -79,12 +82,15 @@ class WebDavBrowserActivity : AppCompatActivity() {
             try {
                 val certificate = WebDavClient(activeConfig).probeCertificate()
                 runOnUiThread {
-                    if (isFinishing) return@runOnUiThread
-                    showCertificateDialog(certificate)
+                    if (generation != loadGeneration || isFinishing) return@runOnUiThread
+                    showCertificateDialog(certificate, activeConfig, generation)
                 }
             } catch (error: Exception) {
                 Log.e(TAG, "Certificate probe failed", error)
-                runOnUiThread { showConnectionError(error) }
+                runOnUiThread {
+                    if (generation != loadGeneration || isFinishing) return@runOnUiThread
+                    showConnectionError(error)
+                }
             }
         }
     }
@@ -116,7 +122,10 @@ class WebDavBrowserActivity : AppCompatActivity() {
                     binding.webdavUpButton.isEnabled = path != config?.rootPath
                 }
             } catch (trust: CertificateTrustRequired) {
-                runOnUiThread { config?.let(::probeCertificate) }
+                runOnUiThread {
+                    if (generation != loadGeneration || isFinishing) return@runOnUiThread
+                    config?.let(::probeCertificate)
+                }
             } catch (error: Exception) {
                 Log.e(TAG, "WebDAV directory load failed for $path", error)
                 runOnUiThread {
@@ -177,16 +186,23 @@ class WebDavBrowserActivity : AppCompatActivity() {
         return true
     }
 
-    private fun showCertificateDialog(certificate: WebDavServerCertificate) {
+    private fun showCertificateDialog(
+        certificate: WebDavServerCertificate,
+        activeConfig: WebDavConfig,
+        generation: Int,
+    ) {
         binding.webdavProgress.isVisible = false
         binding.webdavMessage.isVisible = false
         AlertDialog.Builder(this)
             .setTitle(R.string.webdav_certificate_title)
             .setMessage(getString(R.string.webdav_certificate_message, certificate.fingerprint))
             .setPositiveButton(R.string.webdav_trust) { _, _ ->
-                val trusted = config?.copy(
+                if (generation != loadGeneration || config?.id != activeConfig.id) {
+                    return@setPositiveButton
+                }
+                val trusted = activeConfig.copy(
                     certificateFingerprint = certificate.fingerprint,
-                ) ?: return@setPositiveButton
+                )
                 connect(store.save(trusted))
             }
             .setNegativeButton(R.string.dialog_cancel) { _, _ -> finish() }
