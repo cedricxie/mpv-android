@@ -105,3 +105,4 @@ class WebDavConfigStore(context: Context) {
 
 const val EXTRA_WEBDAV_STUDY_URL = "webdav_study_url"
 const val EXTRA_WEBDAV_SUBTITLE_URL = "webdav_subtitle_url"
+const val EXTRA_WEBDAV_SECONDARY_SUBTITLE_URL = "webdav_secondary_subtitle_url"

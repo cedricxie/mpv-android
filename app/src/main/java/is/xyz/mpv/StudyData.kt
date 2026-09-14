@@ -21,6 +21,8 @@ data class StudyCue(
     val id: String,
     val start: Double,
     val end: Double,
+    val loopStart: Double,
+    val loopEnd: Double,
     val kind: String,
     val japanese: String,
     val originalChinese: String,
@@ -72,6 +74,14 @@ object StudyDataParser {
                     id = item.getString("id"),
                     start = item.getDouble("start"),
                     end = item.getDouble("end"),
+                    loopStart = if (item.has("loop_start"))
+                        item.getDouble("loop_start")
+                    else
+                        item.getDouble("start"),
+                    loopEnd = if (item.has("loop_end"))
+                        item.getDouble("loop_end")
+                    else
+                        item.getDouble("end"),
                     kind = item.getString("kind"),
                     japanese = item.getString("ja"),
                     originalChinese = item.getString("zh"),
@@ -100,6 +110,12 @@ object StudyDataParser {
             }
             require(cue.end.isFinite() && cue.end > cue.start) {
                 "Invalid end time for ${cue.id}"
+            }
+            require(cue.loopStart.isFinite() && cue.loopStart >= 0.0 && cue.loopStart <= cue.start) {
+                "Invalid loop start time for ${cue.id}"
+            }
+            require(cue.loopEnd.isFinite() && cue.loopEnd >= cue.end) {
+                "Invalid loop end time for ${cue.id}"
             }
         }
         return cues

@@ -140,15 +140,28 @@ class WebDavBrowserActivity : AppCompatActivity() {
         }
         val activeClient = client ?: return
         val baseName = entry.name.substringBeforeLast('.', entry.name)
-        fun companion(vararg suffixes: String): WebDavEntry? = suffixes.firstNotNullOfOrNull { suffix ->
-            allEntries.firstOrNull { it.name.equals(baseName + suffix, ignoreCase = true) }
-        }
-        val subtitle = companion(".zh.ass", ".ass", ".zh.srt", ".srt")
-        val study = companion(".study.json")
+        val byName = allEntries.associateBy { it.name.lowercase() }
+        val companions = StudyDocumentResolver.findNames(byName.keys, baseName)
         val intent = Intent(this, MPVActivity::class.java)
             .putExtra("filepath", activeClient.urlForPath(entry.path))
-        subtitle?.let { intent.putExtra(EXTRA_WEBDAV_SUBTITLE_URL, activeClient.urlForPath(it.path)) }
-        study?.let { intent.putExtra(EXTRA_WEBDAV_STUDY_URL, activeClient.urlForPath(it.path)) }
+        companions.primarySubtitle?.let { name ->
+            intent.putExtra(
+                EXTRA_WEBDAV_SUBTITLE_URL,
+                activeClient.urlForPath(byName.getValue(name.lowercase()).path),
+            )
+        }
+        companions.secondarySubtitle?.let { name ->
+            intent.putExtra(
+                EXTRA_WEBDAV_SECONDARY_SUBTITLE_URL,
+                activeClient.urlForPath(byName.getValue(name.lowercase()).path),
+            )
+        }
+        companions.studyData?.let { name ->
+            intent.putExtra(
+                EXTRA_WEBDAV_STUDY_URL,
+                activeClient.urlForPath(byName.getValue(name.lowercase()).path),
+            )
+        }
         startActivity(intent)
     }
 
