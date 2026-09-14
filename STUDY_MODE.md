@@ -37,6 +37,10 @@ HTTP bridge. The bridge handles HTTP Range requests and connects to the NAS with
 credentials never enter mpv or get reused for unrelated URLs. Matching subtitle and `*.study.json`
 companions must be on the configured NAS origin and under the configured media root.
 
+Multiple NAS profiles can be saved. The button showing the active NAS switches between profiles;
+**Manage** adds, edits, or deletes profiles. Existing single-NAS installations migrate automatically,
+and every saved password remains encrypted with Android Keystore.
+
 ## NAS folders through Android document providers (fallback)
 
 Long-press **Open NAS folder** and choose an SMB folder from a document-provider app such as CX File

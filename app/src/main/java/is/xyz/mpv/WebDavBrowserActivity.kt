@@ -39,7 +39,8 @@ class WebDavBrowserActivity : AppCompatActivity() {
         store = WebDavConfigStore(this)
         binding.webdavList.layoutManager = LinearLayoutManager(this)
         binding.webdavList.adapter = EntryAdapter(::openEntry)
-        binding.webdavConfigureButton.setOnClickListener { showConfigurationDialog() }
+        binding.webdavSwitchButton.setOnClickListener { showProfileSwitcher() }
+        binding.webdavConfigureButton.setOnClickListener { showProfileManager() }
         binding.webdavUpButton.setOnClickListener { navigateUp() }
         onBackPressedDispatcher.addCallback(this) {
             if (!navigateUp()) finish()
@@ -56,9 +57,14 @@ class WebDavBrowserActivity : AppCompatActivity() {
     }
 
     private fun connect(newConfig: WebDavConfig) {
+        ++loadGeneration
         config = newConfig
         client = WebDavClient(newConfig)
         currentPath = WebDavConfigStore.normalizeRoot(newConfig.rootPath)
+        allEntries = emptyList()
+        (binding.webdavList.adapter as EntryAdapter).submit(emptyList())
+        binding.webdavSwitchButton.text = newConfig.name
+        binding.webdavSwitchButton.contentDescription = getString(R.string.webdav_switch)
         if (newConfig.certificateFingerprint == null) {
             probeCertificate(newConfig)
             return
@@ -67,6 +73,7 @@ class WebDavBrowserActivity : AppCompatActivity() {
     }
 
     private fun probeCertificate(activeConfig: WebDavConfig) {
+        val generation = ++loadGeneration
         binding.webdavProgress.isVisible = true
         binding.webdavMessage.isVisible = true
         binding.webdavMessage.setTextColor(0xffeeeeee.toInt())
@@ -75,12 +82,15 @@ class WebDavBrowserActivity : AppCompatActivity() {
             try {
                 val certificate = WebDavClient(activeConfig).probeCertificate()
                 runOnUiThread {
-                    if (isFinishing) return@runOnUiThread
-                    showCertificateDialog(certificate)
+                    if (generation != loadGeneration || isFinishing) return@runOnUiThread
+                    showCertificateDialog(certificate, activeConfig, generation)
                 }
             } catch (error: Exception) {
                 Log.e(TAG, "Certificate probe failed", error)
-                runOnUiThread { showConnectionError(error) }
+                runOnUiThread {
+                    if (generation != loadGeneration || isFinishing) return@runOnUiThread
+                    showConnectionError(error)
+                }
             }
         }
     }
@@ -112,7 +122,10 @@ class WebDavBrowserActivity : AppCompatActivity() {
                     binding.webdavUpButton.isEnabled = path != config?.rootPath
                 }
             } catch (trust: CertificateTrustRequired) {
-                runOnUiThread { config?.let(::probeCertificate) }
+                runOnUiThread {
+                    if (generation != loadGeneration || isFinishing) return@runOnUiThread
+                    config?.let(::probeCertificate)
+                }
             } catch (error: Exception) {
                 Log.e(TAG, "WebDAV directory load failed for $path", error)
                 runOnUiThread {
@@ -173,26 +186,65 @@ class WebDavBrowserActivity : AppCompatActivity() {
         return true
     }
 
-    private fun showCertificateDialog(certificate: WebDavServerCertificate) {
+    private fun showCertificateDialog(
+        certificate: WebDavServerCertificate,
+        activeConfig: WebDavConfig,
+        generation: Int,
+    ) {
         binding.webdavProgress.isVisible = false
         binding.webdavMessage.isVisible = false
         AlertDialog.Builder(this)
             .setTitle(R.string.webdav_certificate_title)
             .setMessage(getString(R.string.webdav_certificate_message, certificate.fingerprint))
             .setPositiveButton(R.string.webdav_trust) { _, _ ->
-                val trusted = config?.copy(
+                if (generation != loadGeneration || config?.id != activeConfig.id) {
+                    return@setPositiveButton
+                }
+                val trusted = activeConfig.copy(
                     certificateFingerprint = certificate.fingerprint,
-                ) ?: return@setPositiveButton
-                store.save(trusted)
-                connect(trusted)
+                )
+                connect(store.save(trusted))
             }
             .setNegativeButton(R.string.dialog_cancel) { _, _ -> finish() }
             .setCancelable(false)
             .show()
     }
 
-    private fun showConfigurationDialog(required: Boolean = false) {
-        val existing = config ?: store.load()
+    private fun showProfileSwitcher() {
+        val profiles = store.list()
+        if (profiles.isEmpty()) {
+            showConfigurationDialog(required = true)
+            return
+        }
+        val currentId = config?.id
+        val checked = profiles.indexOfFirst { it.id == currentId }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.webdav_switch)
+            .setSingleChoiceItems(profiles.map { it.name }.toTypedArray(), checked) { dialog, which ->
+                store.select(profiles[which].id)?.let(::connect)
+                dialog.dismiss()
+            }
+            .setNegativeButton(R.string.dialog_cancel, null)
+            .show()
+    }
+
+    private fun showProfileManager() {
+        val profiles = store.list()
+        val labels = profiles.map { "✎  ${it.name}" } + getString(R.string.webdav_add)
+        AlertDialog.Builder(this)
+            .setTitle(R.string.webdav_profiles)
+            .setItems(labels.toTypedArray()) { _, which ->
+                if (which == profiles.size) showConfigurationDialog(existing = null)
+                else showConfigurationDialog(existing = profiles[which])
+            }
+            .setNegativeButton(R.string.dialog_cancel, null)
+            .show()
+    }
+
+    private fun showConfigurationDialog(
+        existing: WebDavConfig? = config ?: store.load(),
+        required: Boolean = false,
+    ) {
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             val padding = Utils.convertDp(this@WebDavBrowserActivity, 20f)
@@ -207,6 +259,10 @@ class WebDavBrowserActivity : AppCompatActivity() {
                 container.addView(this)
             }
         }
+        val name = field(
+            R.string.webdav_profile_name,
+            existing?.name ?: "",
+        )
         val server = field(R.string.webdav_server, existing?.serverUrl ?: WebDavConfigStore.DEFAULT_SERVER)
         val root = field(R.string.webdav_root, existing?.rootPath ?: WebDavConfigStore.DEFAULT_ROOT)
         val username = field(R.string.webdav_username, existing?.username ?: WebDavConfigStore.DEFAULT_USERNAME)
@@ -218,12 +274,21 @@ class WebDavBrowserActivity : AppCompatActivity() {
             .setPositiveButton(R.string.webdav_save, null)
             .apply {
                 if (!required) setNegativeButton(R.string.dialog_cancel, null)
+                if (existing != null && !required) {
+                    setNeutralButton(R.string.webdav_delete, null)
+                }
             }
             .setCancelable(!required)
             .create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                if (server.text.isBlank() || root.text.isBlank() || username.text.isBlank() || password.text.isBlank()) {
+                if (
+                    name.text.isBlank() ||
+                    server.text.isBlank() ||
+                    root.text.isBlank() ||
+                    username.text.isBlank() ||
+                    password.text.isBlank()
+                ) {
                     return@setOnClickListener
                 }
                 val normalizedServer = server.text.toString().trim().trimEnd('/')
@@ -235,18 +300,44 @@ class WebDavBrowserActivity : AppCompatActivity() {
                     existing?.serverUrl.equals(normalizedServer, ignoreCase = true)
                 }
                 val saved = WebDavConfig(
+                    id = existing?.id.orEmpty(),
+                    name = name.text.toString().trim(),
                     serverUrl = normalizedServer,
                     rootPath = WebDavConfigStore.normalizeRoot(root.text.toString()),
                     username = username.text.toString().trim(),
                     password = password.text.toString(),
                     certificateFingerprint = fingerprint,
                 )
-                store.save(saved)
                 dialog.dismiss()
-                connect(saved)
+                connect(store.save(saved))
+            }
+            if (existing != null && !required) {
+                dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                    confirmDeleteProfile(dialog, existing)
+                }
             }
         }
         dialog.show()
+    }
+
+    private fun confirmDeleteProfile(editorDialog: AlertDialog, profile: WebDavConfig) {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.webdav_delete_title)
+            .setMessage(getString(R.string.webdav_delete_message, profile.name))
+            .setPositiveButton(R.string.webdav_delete) { _, _ ->
+                editorDialog.dismiss()
+                val next = store.delete(profile.id)
+                if (next == null) {
+                    config = null
+                    client = null
+                    binding.webdavSwitchButton.setText(R.string.webdav_switch)
+                    showConfigurationDialog(existing = null, required = true)
+                } else {
+                    connect(next)
+                }
+            }
+            .setNegativeButton(R.string.dialog_cancel, null)
+            .show()
     }
 
     private class EntryAdapter(
