@@ -29,10 +29,19 @@
             android:textSize="16sp" />
 
         <Button
+            android:id="@+id/webdavSwitchButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxWidth="132dp"
+            android:maxLines="1"
+            android:text="@string/webdav_switch" />
+
+        <Button
             android:id="@+id/webdavConfigureButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/webdav_configure" />
+            android:text="@string/webdav_manage" />
     </LinearLayout>
 
     <ProgressBar

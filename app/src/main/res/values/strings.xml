@@ -233,6 +233,15 @@
     <string name="study_expand">Expand</string>
     <string name="webdav_title">NAS Library</string>
     <string name="webdav_configure">Configure NAS</string>
+    <string name="webdav_profile_name">NAS name</string>
+    <string name="webdav_switch">Switch NAS</string>
+    <string name="webdav_manage">Manage</string>
+    <string name="webdav_profiles">NAS profiles</string>
+    <string name="webdav_add">Add NAS</string>
+    <string name="webdav_edit">Edit NAS</string>
+    <string name="webdav_delete">Delete</string>
+    <string name="webdav_delete_title">Delete this NAS?</string>
+    <string name="webdav_delete_message">The saved profile for %1$s will be removed from this device.</string>
     <string name="webdav_server">Server URL</string>
     <string name="webdav_root">Media root</string>
     <string name="webdav_username">Username</string>

@@ -200,6 +200,15 @@
     <string name="study_expand">展开</string>
     <string name="webdav_title">NAS 媒体库</string>
     <string name="webdav_configure">配置 NAS</string>
+    <string name="webdav_profile_name">NAS 名称</string>
+    <string name="webdav_switch">切换 NAS</string>
+    <string name="webdav_manage">管理</string>
+    <string name="webdav_profiles">NAS 配置</string>
+    <string name="webdav_add">添加 NAS</string>
+    <string name="webdav_edit">编辑 NAS</string>
+    <string name="webdav_delete">删除</string>
+    <string name="webdav_delete_title">删除这台 NAS？</string>
+    <string name="webdav_delete_message">将从本机删除“%1$s”的已保存配置。</string>
     <string name="webdav_server">服务器地址</string>
     <string name="webdav_root">媒体根目录</string>
     <string name="webdav_username">用户名</string>
