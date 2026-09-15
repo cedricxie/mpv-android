@@ -53,7 +53,9 @@ class WebDavClient(private val config: WebDavConfig) {
         }
     }
     private val streamingClient: OkHttpClient by lazy {
-        client.newBuilder().readTimeout(0, TimeUnit.SECONDS).build()
+        // A dead Tailscale/Wi-Fi connection must eventually reach the proxy's
+        // byte-range recovery path rather than block forever.
+        client.newBuilder().readTimeout(30, TimeUnit.SECONDS).build()
     }
 
     fun list(path: String): List<WebDavEntry> {
@@ -128,12 +130,14 @@ class WebDavClient(private val config: WebDavConfig) {
         }
     }
 
-    internal fun executeMediaRequest(url: String, range: String?): okhttp3.Response {
+    internal fun executeMediaRequest(url: String, range: String?, ifRange: String? = null): okhttp3.Response {
         require(isAllowedUrl(url)) { "WebDAV media URL is outside the configured NAS directory" }
         val request = Request.Builder()
             .url(url)
             .header("Authorization", authorizationHeader)
+            .header("Accept-Encoding", "identity")
             .apply { if (!range.isNullOrBlank()) header("Range", range) }
+            .apply { if (ifRange != null) header("If-Range", ifRange) }
             .build()
         return streamingClient.newCall(request).execute()
     }

@@ -216,6 +216,9 @@
     <string name="webdav_save">保存并连接</string>
     <string name="webdav_empty">这个目录中没有可播放文件</string>
     <string name="webdav_connection_failed">无法连接 NAS：%1$s</string>
+    <string name="playback_interrupted">播放中断：%1$s。播放器已保留当前页面，可以从中断位置重试。</string>
+    <string name="playback_error_title">播放中断</string>
+    <string name="playback_retry">从当前位置重试</string>
     <string name="webdav_certificate_title">信任这台 NAS？</string>
     <string name="webdav_certificate_message">请在群晖中核对以下 SHA-256 证书指纹，然后选择信任：\n\n%1$s</string>
     <string name="webdav_trust">信任</string>

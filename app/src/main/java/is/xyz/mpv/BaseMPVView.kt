@@ -29,8 +29,9 @@ abstract class BaseMPVView(context: Context, attrs: AttributeSet) : SurfaceView(
         postInitOptions()
         // could mess up VO init before surfaceCreated() is called
         MPVLib.setOptionString("force-window", "no")
-        // need to idle at least once for playFile() logic to work
-        MPVLib.setOptionString("idle", "once")
+        // Keep the engine available after read errors. The activity handles normal EOF
+        // separately, so network failures need not close the playback screen.
+        MPVLib.setOptionString("idle", "yes")
 
         holder.addCallback(this)
         observeProperties()

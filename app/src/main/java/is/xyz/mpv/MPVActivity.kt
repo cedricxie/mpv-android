@@ -2,6 +2,7 @@ package `is`.xyz.mpv
 
 import `is`.xyz.mpv.databinding.PlayerBinding
 import `is`.xyz.mpv.MPVLib.MpvEvent
+import `is`.xyz.mpv.MPVLib.MpvEndFileReason
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.annotation.SuppressLint
@@ -100,6 +101,12 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     private var sharedSecondarySubtitleUri: Uri? = null
     private var sharedStudyUri: Uri? = null
     private val webDavProxies = mutableListOf<WebDavProxyServer>()
+    @Volatile private var webDavStreamFailure: String? = null
+    private var playbackEndedWithError = false
+    private var currentPlaybackPath: String? = null
+    private var retryPosition: Double? = null
+    private var studyPrimaryPath: String? = null
+    private var studySecondaryPath: String? = null
 
     // convenience alias
     private val player get() = binding.player
@@ -326,6 +333,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
 
         player.addObserver(this)
         val playbackPath = proxyWebDavMedia(filepath)
+        currentPlaybackPath = playbackPath
         player.initialize(filesDir.path, cacheDir.path)
         player.playFile(playbackPath)
         loadStudyData(filepath, intent)
@@ -438,6 +446,8 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     }
 
     private fun loadStudyData(mediaPath: String, sourceIntent: Intent?) {
+        studyPrimaryPath = null
+        studySecondaryPath = null
         val generation = ++studyLoadGeneration
         studyCues = emptyList()
         activeStudyIndex = -1
@@ -519,13 +529,19 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         val client = runCatching { WebDavClient(config) }.getOrNull() ?: return mediaPath
         if (!client.isAllowedUrl(mediaPath)) return mediaPath
         return runCatching {
-            WebDavProxyServer(client, mediaPath).also(webDavProxies::add).playbackUrl
+            WebDavProxyServer(client, mediaPath, onStreamFailure = { message ->
+                webDavStreamFailure = message
+            }).also {
+                webDavProxies.add(it)
+            }.playbackUrl
         }.onFailure {
             Log.e(TAG, "Failed to create local WebDAV media proxy", it)
         }.getOrDefault(mediaPath)
     }
 
     private fun addStudySubtitles(primary: String?, secondary: String?) {
+        studyPrimaryPath = primary
+        studySecondaryPath = secondary
         val secondaryId = secondary?.let {
             MPVLib.command(arrayOf("sub-add", it, "select", "", "ja"))
             player.sid.takeIf { id -> id != -1 }
@@ -2432,10 +2448,17 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
             updateMediaSession()
         }
 
-        if (eventId == MpvEvent.MPV_EVENT_SHUTDOWN)
+        if (eventId == MpvEvent.MPV_EVENT_SHUTDOWN) {
+            if (playbackEndedWithError) {
+                Log.e(TAG, "mpv shut down after a playback error; keeping the error visible")
+                return
+            }
             finishWithResult(if (playbackHasStarted) RESULT_OK else RESULT_CANCELED)
+        }
 
         if (eventId == MpvEvent.MPV_EVENT_START_FILE) {
+            playbackEndedWithError = false
+            webDavStreamFailure = null
             val cmds = onloadCommands.toTypedArray()
             onloadCommands.clear()
             for (c in cmds)
@@ -2447,8 +2470,56 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
             playbackHasStarted = true
         }
 
+        if (eventId == MpvEvent.MPV_EVENT_FILE_LOADED) {
+            currentPlaybackPath = MPVLib.getPropertyString("path")
+            retryPosition?.let { position ->
+                retryPosition = null
+                MPVLib.command(arrayOf("seek", position.toString(), "absolute+exact"))
+                eventUiHandler.post {
+                    if (isFinishing || isDestroyed) return@post
+                    addStudySubtitles(studyPrimaryPath, studySecondaryPath)
+                }
+            }
+        }
+
         if (!activityIsForeground) return
         eventUiHandler.post { eventUi(eventId) }
+    }
+
+    override fun eventEndFile(reason: Int, error: Int, errorText: String) {
+        val resumePosition = psc.positionSec.coerceAtLeast(0)
+        val failedPath = currentPlaybackPath
+        val playlistFinished = psc.playlistPos >= psc.playlistCount - 1
+        val playlistRepeats = MPVLib.getPropertyString("loop-playlist")?.let { it != "no" && it != "0" } ?: false
+        psc.eof()
+        updateMediaSession()
+        if (reason == MpvEndFileReason.EOF && playlistFinished && !playlistRepeats) {
+            runOnUiThread { finishWithResult(RESULT_OK) }
+            return
+        }
+        if (reason != MpvEndFileReason.ERROR)
+            return
+
+        playbackEndedWithError = true
+        val detail = webDavStreamFailure ?: errorText
+        Log.e(TAG, "Playback ended with error $error at ${resumePosition}s: $detail")
+        if (!activityIsForeground) return
+        eventUiHandler.post {
+            if (isFinishing || isDestroyed) return@post
+            AlertDialog.Builder(this)
+                .setTitle(R.string.playback_error_title)
+                .setMessage(getString(R.string.playback_interrupted, detail))
+                .setPositiveButton(R.string.playback_retry) { _, _ ->
+                    failedPath?.takeIf { playbackEndedWithError && currentPlaybackPath == it }?.let { path ->
+                        exitStudyMode()
+                        retryPosition = resumePosition.toDouble()
+                        MPVLib.command(arrayOf("loadfile", path, "replace"))
+                    }
+                }
+                .setNegativeButton(R.string.dialog_cancel, null)
+                .show()
+            showControls()
+        }
     }
 
     // Gesture handler
