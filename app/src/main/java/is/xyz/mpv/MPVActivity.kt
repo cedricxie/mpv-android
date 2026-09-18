@@ -744,8 +744,19 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     private fun exitStudyMode() {
         if (activeStudyIndex == -1)
             return
+
+        val resumePosition = player.timePos ?: psc.positionSec.toDouble()
+        val hasAudio = MPVLib.getPropertyBoolean("current-tracks/audio/selected") == true
         player.clearStudyLoop()
         speedBeforeStudy?.let { player.playbackSpeed = it }
+        // Leaving the loop can race with mpv seeking from B back to A. Re-seek after the
+        // loop and speed are restored so audio and video restart from the same timestamp.
+        MPVLib.command(arrayOf("seek", resumePosition.toString(), "absolute+exact"))
+        if (hasAudio) {
+            // Android's audio output can occasionally remain silent after the loop seek and
+            // speed-filter transition even though the audio track is still selected.
+            MPVLib.command(arrayOf("ao-reload"))
+        }
         speedBeforeStudy = null
         activeStudyIndex = -1
         binding.studyPanel.visibility = View.GONE
