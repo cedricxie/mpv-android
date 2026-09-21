@@ -249,6 +249,9 @@
     <string name="webdav_save">Save and connect</string>
     <string name="webdav_empty">This folder contains no playable files</string>
     <string name="webdav_connection_failed">Could not connect to NAS: %1$s</string>
+    <string name="playback_interrupted">Playback was interrupted: %1$s. The player stayed open so you can retry.</string>
+    <string name="playback_error_title">Playback interrupted</string>
+    <string name="playback_retry">Retry from this position</string>
     <string name="webdav_certificate_title">Trust this NAS?</string>
     <string name="webdav_certificate_message">Verify this SHA-256 certificate fingerprint on your Synology NAS, then trust it:\n\n%1$s</string>
     <string name="webdav_trust">Trust</string>

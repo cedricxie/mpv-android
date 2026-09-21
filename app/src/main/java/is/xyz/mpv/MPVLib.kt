@@ -102,6 +102,14 @@ object MPVLib {
         }
     }
 
+    @JvmStatic
+    fun eventEndFile(reason: Int, error: Int, errorText: String) {
+        synchronized(observers) {
+            for (o in observers)
+                o.eventEndFile(reason, error, errorText)
+        }
+    }
+
     private val log_observers = mutableListOf<LogObserver>()
 
     @JvmStatic
@@ -133,6 +141,9 @@ object MPVLib {
         fun eventProperty(property: String, value: String)
         fun eventProperty(property: String, value: Double)
         fun event(eventId: Int)
+        fun eventEndFile(reason: Int, error: Int, errorText: String) {
+            event(MpvEvent.MPV_EVENT_END_FILE)
+        }
     }
 
     interface LogObserver {
@@ -174,6 +185,14 @@ object MPVLib {
         const val MPV_EVENT_PROPERTY_CHANGE: Int = 22
         const val MPV_EVENT_QUEUE_OVERFLOW: Int = 24
         const val MPV_EVENT_HOOK: Int = 25
+    }
+
+    object MpvEndFileReason {
+        const val EOF: Int = 0
+        const val STOP: Int = 2
+        const val QUIT: Int = 3
+        const val ERROR: Int = 4
+        const val REDIRECT: Int = 5
     }
 
     object MpvLogLevel {
