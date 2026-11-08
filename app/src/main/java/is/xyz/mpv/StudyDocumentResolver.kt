@@ -32,6 +32,8 @@ object StudyDocumentResolver {
             "$baseName.ass",
             "$baseName.zh.srt",
             "$baseName.srt",
+            "$baseName.ja.ass",
+            "$baseName.ja.srt",
         )
         val hasExplicitChinese = primarySubtitle.equals("$baseName.zh.ass", ignoreCase = true) ||
             primarySubtitle.equals("$baseName.zh.srt", ignoreCase = true)
