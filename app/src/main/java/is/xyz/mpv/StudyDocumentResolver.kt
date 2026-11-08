@@ -12,6 +12,7 @@ data class StudyCompanionFiles(
     val primarySubtitle: Uri?,
     val secondarySubtitle: Uri?,
     val studyData: Uri?,
+    val primarySubtitleLanguage: String,
 )
 
 data class StudyCompanionNames(
@@ -21,6 +22,10 @@ data class StudyCompanionNames(
 )
 
 object StudyDocumentResolver {
+    fun subtitleLanguage(name: String?): String =
+        if (name?.endsWith(".ja.ass", ignoreCase = true) == true ||
+            name?.endsWith(".ja.srt", ignoreCase = true) == true) "ja" else "zh"
+
     fun findNames(names: Collection<String>, baseName: String): StudyCompanionNames {
         val available = names.associateBy { it.lowercase() }
         fun first(vararg candidates: String): String? = candidates.firstNotNullOfOrNull {
@@ -89,6 +94,7 @@ object StudyDocumentResolver {
             primarySubtitle = names.primarySubtitle?.let { documents[it.lowercase()] },
             secondarySubtitle = names.secondarySubtitle?.let { documents[it.lowercase()] },
             studyData = names.studyData?.let { documents[it.lowercase()] },
+            primarySubtitleLanguage = subtitleLanguage(names.primarySubtitle),
         )
     }
 

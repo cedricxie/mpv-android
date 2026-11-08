@@ -6,6 +6,15 @@ import org.junit.Test
 
 class StudyDocumentResolverTest {
     @Test
+    fun identifiesPrimarySubtitleLanguage() {
+        assertEquals("ja", StudyDocumentResolver.subtitleLanguage("Episode.JA.SRT"))
+        assertEquals("ja", StudyDocumentResolver.subtitleLanguage("Episode.ja.ass"))
+        assertEquals("zh", StudyDocumentResolver.subtitleLanguage("Episode.zh.ass"))
+        assertEquals("zh", StudyDocumentResolver.subtitleLanguage("Episode.ass"))
+        assertEquals("zh", StudyDocumentResolver.subtitleLanguage(null))
+    }
+
+    @Test
     fun loadsJapaneseOnlySrtAsPrimary() {
         val result = StudyDocumentResolver.findNames(
             listOf("Irodori - S01E01.ja.srt", "Irodori - S01E01.study.json"),
