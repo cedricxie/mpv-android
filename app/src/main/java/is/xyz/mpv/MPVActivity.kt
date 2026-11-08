@@ -105,6 +105,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     private var playbackEndedWithError = false
     private var currentPlaybackPath: String? = null
     private var retryPosition: Double? = null
+    private var studyPrimaryLanguage = "zh"
     private var studyPrimaryPath: String? = null
     private var studySecondaryPath: String? = null
 
@@ -539,7 +540,8 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         }.getOrDefault(mediaPath)
     }
 
-    private fun addStudySubtitles(primary: String?, secondary: String?) {
+    private fun addStudySubtitles(primary: String?, secondary: String?, primaryLanguage: String) {
+        studyPrimaryLanguage = primaryLanguage
         studyPrimaryPath = primary
         studySecondaryPath = secondary
         val secondaryId = secondary?.let {
@@ -547,7 +549,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
             player.sid.takeIf { id -> id != -1 }
         }
         primary?.let {
-            MPVLib.command(arrayOf("sub-add", it, "select", "", "zh"))
+            MPVLib.command(arrayOf("sub-add", it, "select", "", primaryLanguage))
         }
         if (primary != null && secondaryId != null && secondaryId != player.sid)
             player.secondarySid = secondaryId
@@ -576,6 +578,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                     addStudySubtitles(
                         companions.primarySubtitle?.toString(),
                         companions.secondarySubtitle?.toString(),
+                        companions.primarySubtitleLanguage,
                     )
                     if (parsed == null) {
                         studyDataStatus = StudyDataStatus.MISSING
@@ -609,10 +612,13 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                 val parsed = studyUri?.let {
                     StudyDataParser.parse(StudyDocumentResolver.readText(contentResolver, it))
                 }
+                val primaryLanguage = StudyDocumentResolver.subtitleLanguage(
+                    subtitleUri?.let { StudyDocumentResolver.displayName(contentResolver, it) },
+                )
                 runOnUiThread {
                     if (isFinishing || isDestroyed || generation != studyLoadGeneration)
                         return@runOnUiThread
-                    addStudySubtitles(subtitleUri?.toString(), secondarySubtitleUri?.toString())
+                    addStudySubtitles(subtitleUri?.toString(), secondarySubtitleUri?.toString(), primaryLanguage)
                     if (parsed == null) {
                         studyDataStatus = StudyDataStatus.MISSING
                     } else {
@@ -672,6 +678,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                     addStudySubtitles(
                         subtitleFile?.absolutePath,
                         secondarySubtitleFile?.absolutePath,
+                        StudyDocumentResolver.subtitleLanguage(subtitleUrl?.let { URI(it).path }),
                     )
                     if (parsed == null) {
                         studyDataStatus = StudyDataStatus.MISSING
@@ -2488,7 +2495,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                 MPVLib.command(arrayOf("seek", position.toString(), "absolute+exact"))
                 eventUiHandler.post {
                     if (isFinishing || isDestroyed) return@post
-                    addStudySubtitles(studyPrimaryPath, studySecondaryPath)
+                    addStudySubtitles(studyPrimaryPath, studySecondaryPath, studyPrimaryLanguage)
                 }
             }
         }
